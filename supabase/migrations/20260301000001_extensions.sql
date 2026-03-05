@@ -4,4 +4,5 @@
 CREATE EXTENSION IF NOT EXISTS vector;      -- pgvector: halfvec(768), HNSW
 CREATE EXTENSION IF NOT EXISTS postgis;     -- PostGIS: geography(POINT, 4326), ST_DWithin
 CREATE EXTENSION IF NOT EXISTS pg_trgm;     -- Trigram: fuzzy text matching, GIN indexes
--- pgmq and pg_cron are pre-installed on Supabase Pro
+CREATE EXTENSION IF NOT EXISTS pgmq;       -- pgmq: lightweight message queues
+CREATE EXTENSION IF NOT EXISTS pg_cron;     -- pg_cron: scheduled jobs
