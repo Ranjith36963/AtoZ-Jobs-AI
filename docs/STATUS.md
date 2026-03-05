@@ -15,7 +15,11 @@
 - [x] Migration 004: Queues, cron, health view
 - [x] Migration 005: RLS policies
 - [x] seed.sql
-- [ ] Gate 1 verification (requires Supabase local)
+- [x] supabase/config.toml
+- [x] docs/architecture.md, docs/STATUS.md
+- [x] docs/phase-1/ (SPEC.md, PLAYBOOK.md, GATES.md)
+- [x] .claude/ agents, skills, rules, commands
+- [ ] Gate 1 verification (PENDING — requires Docker + Supabase local: F1–F13)
 
 ### Stage 2: Collection
 - [ ] Pydantic models (JobBase + adapters)
