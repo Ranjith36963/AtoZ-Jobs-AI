@@ -1,0 +1,36 @@
+{
+  "type": "JOBS",
+  "hits": 892,
+  "pages": 45,
+  "response_time": 0.234,
+  "jobs": [
+    {
+      "url": "https://www.careerjet.co.uk/jobviewx/abc123",
+      "title": "Backend Engineer - Go/Python",
+      "description": "Backend engineer role working with Go and Python microservices. gRPC and REST API experience required.",
+      "company": "FinTech Solutions",
+      "locations": "Birmingham, West Midlands",
+      "date": "2026-03-05",
+      "salary": "£60,000 - £80,000 per annum",
+      "salary_min": 60000.0,
+      "salary_max": 80000.0,
+      "salary_type": "yearly",
+      "salary_currency_code": "GBP",
+      "site": "reed.co.uk"
+    },
+    {
+      "url": "https://www.careerjet.co.uk/jobviewx/def456",
+      "title": "QA Automation Tester",
+      "description": "QA automation role using Selenium and Cypress.",
+      "company": "TestPro UK",
+      "locations": "Remote, UK",
+      "date": "2026-03-04",
+      "salary": "",
+      "salary_min": null,
+      "salary_max": null,
+      "salary_type": null,
+      "salary_currency_code": null,
+      "site": "totaljobs.com"
+    }
+  ]
+}
