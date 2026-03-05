@@ -177,3 +177,240 @@ class TestJoobleCollector:
             collector = JoobleCollector(client=client, api_key="test-key")
             with pytest.raises(Exception):
                 await collector.fetch_all(keyword="test")
+
+
+def _make_jooble_job(n: int) -> JobBase:
+    """Create a minimal valid JobBase for orchestration tests."""
+    return JobBase(
+        source_name="jooble",
+        external_id=str(n),
+        source_url=f"https://jooble.org/jdp/{n}",
+        title=f"Test Job {n}",
+        description=f"Description {n}",
+        description_plain=f"Description {n}",
+        company_name="TestCo",
+        location_raw="London",
+        raw_data={"id": n},
+    )
+
+
+class TestJoobleCollectorCoverage:
+    """Coverage tests for Jooble collector internals."""
+
+    @pytest.mark.asyncio()
+    async def test_circuit_breaker_open_returns_empty(self) -> None:
+        """Open circuit breaker → fetch_all returns [] immediately."""
+        from src.collectors.circuit_breaker import CircuitBreaker
+        from src.collectors.jooble import JoobleCollector
+
+        breaker = CircuitBreaker(name="jooble", failure_threshold=1)
+        breaker.record_failure()
+
+        async with httpx.AsyncClient() as client:
+            collector = JoobleCollector(
+                client=client, api_key="test-key", circuit_breaker=breaker
+            )
+            jobs = await collector.fetch_all(keyword="python")
+            assert jobs == []
+
+    @pytest.mark.asyncio()
+    async def test_fetch_all_success_with_adapter(
+        self, jooble_fixture: dict[str, object]
+    ) -> None:
+        """fetch_all parses response through adapter and returns JobBase list."""
+        from src.collectors.jooble import JoobleCollector
+
+        call_count = 0
+
+        async def mock_handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return httpx.Response(200, json=jooble_fixture)
+            return httpx.Response(200, json={"jobs": []})
+
+        transport = httpx.MockTransport(mock_handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            collector = JoobleCollector(client=client, api_key="test-key")
+            jobs = await collector.fetch_all(keyword="devops")
+            assert len(jobs) == 2
+            assert all(isinstance(j, JobBase) for j in jobs)
+            assert jobs[0].title == "DevOps Engineer"
+
+    @pytest.mark.asyncio()
+    async def test_non_list_jobs_raises_parse_error(self) -> None:
+        """Non-list 'jobs' field raises ParseError."""
+        from src.collectors.jooble import JoobleCollector
+        from src.models.errors import ParseError
+
+        async def mock_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"jobs": "not a list"})
+
+        transport = httpx.MockTransport(mock_handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            collector = JoobleCollector(client=client, api_key="test-key")
+            with pytest.raises(ParseError):
+                await collector.fetch_all(keyword="test")
+
+    @pytest.mark.asyncio()
+    async def test_adapter_error_skips_bad_job(
+        self, jooble_fixture: dict[str, object]
+    ) -> None:
+        """Invalid job in results is skipped; valid jobs pass through."""
+        from src.collectors.jooble import JoobleCollector
+
+        bad_job = {
+            "id": "bad",
+            "title": "",
+            "snippet": "x",
+            "company": "A",
+            "location": "L",
+            "link": "https://x.com",
+            "updated": "2026-03-05",
+        }
+        jobs_data = list(jooble_fixture["jobs"])  # type: ignore[arg-type]
+        fixture = {"jobs": [bad_job, *jobs_data]}
+        call_count = 0
+
+        async def mock_handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return httpx.Response(200, json=fixture)
+            return httpx.Response(200, json={"jobs": []})
+
+        transport = httpx.MockTransport(mock_handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            collector = JoobleCollector(client=client, api_key="test-key")
+            jobs = await collector.fetch_all(keyword="test")
+            assert len(jobs) == 2  # bad job skipped
+
+    @pytest.mark.asyncio()
+    async def test_timeout_records_circuit_breaker_failure(self) -> None:
+        """TimeoutException records circuit breaker failure."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.circuit_breaker import CircuitBreaker
+        from src.collectors.jooble import JoobleCollector
+        from src.models.errors import SourceTimeoutError
+
+        breaker = CircuitBreaker(name="jooble")
+        async with httpx.AsyncClient() as client:
+            collector = JoobleCollector(
+                client=client, api_key="test-key", circuit_breaker=breaker
+            )
+            with patch(
+                "src.collectors.jooble.fetch_with_retry", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.side_effect = httpx.TimeoutException("timeout")
+                with pytest.raises(SourceTimeoutError):
+                    await collector.fetch_all(keyword="test")
+            assert breaker._failure_count == 1
+
+    @pytest.mark.asyncio()
+    async def test_429_records_rate_limit(self) -> None:
+        """429 HTTPStatusError records rate limit on circuit breaker."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.circuit_breaker import CircuitBreaker
+        from src.collectors.jooble import JoobleCollector
+
+        breaker = CircuitBreaker(name="jooble")
+        mock_request = httpx.Request("POST", "https://jooble.org/api/key")
+        mock_response = httpx.Response(429, text="Rate limited", request=mock_request)
+
+        async with httpx.AsyncClient() as client:
+            collector = JoobleCollector(
+                client=client, api_key="test-key", circuit_breaker=breaker
+            )
+            with patch(
+                "src.collectors.jooble.fetch_with_retry", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.side_effect = httpx.HTTPStatusError(
+                    "429", request=mock_request, response=mock_response
+                )
+                with pytest.raises(httpx.HTTPStatusError):
+                    await collector.fetch_all(keyword="test")
+            assert breaker._failure_count == 0
+
+    @pytest.mark.asyncio()
+    async def test_5xx_records_circuit_breaker_failure(self) -> None:
+        """500 HTTPStatusError records circuit breaker failure."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.circuit_breaker import CircuitBreaker
+        from src.collectors.jooble import JoobleCollector
+
+        breaker = CircuitBreaker(name="jooble")
+        mock_request = httpx.Request("POST", "https://jooble.org/api/key")
+        mock_response = httpx.Response(500, text="Error", request=mock_request)
+
+        async with httpx.AsyncClient() as client:
+            collector = JoobleCollector(
+                client=client, api_key="test-key", circuit_breaker=breaker
+            )
+            with patch(
+                "src.collectors.jooble.fetch_with_retry", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.side_effect = httpx.HTTPStatusError(
+                    "500", request=mock_request, response=mock_response
+                )
+                with pytest.raises(httpx.HTTPStatusError):
+                    await collector.fetch_all(keyword="test")
+            assert breaker._failure_count == 1
+
+    @pytest.mark.asyncio()
+    async def test_generic_exception_records_failure(self) -> None:
+        """Generic exception records circuit breaker failure."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.circuit_breaker import CircuitBreaker
+        from src.collectors.jooble import JoobleCollector
+
+        breaker = CircuitBreaker(name="jooble")
+        async with httpx.AsyncClient() as client:
+            collector = JoobleCollector(
+                client=client, api_key="test-key", circuit_breaker=breaker
+            )
+            with patch(
+                "src.collectors.jooble.fetch_with_retry", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.side_effect = RuntimeError("unexpected")
+                with pytest.raises(RuntimeError):
+                    await collector.fetch_all(keyword="test")
+            assert breaker._failure_count == 1
+
+    @pytest.mark.asyncio()
+    async def test_sweep_all_iterates_keywords(self) -> None:
+        """sweep_all calls fetch_all for every Jooble keyword."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.jooble import JOOBLE_KEYWORDS, JoobleCollector
+
+        async with httpx.AsyncClient() as client:
+            collector = JoobleCollector(client=client, api_key="test-key")
+            with patch.object(
+                collector, "fetch_all", new_callable=AsyncMock
+            ) as mock_fa:
+                mock_fa.return_value = [_make_jooble_job(1)]
+                jobs = await collector.sweep_all()
+                assert len(jobs) == len(JOOBLE_KEYWORDS)
+                assert mock_fa.call_count == len(JOOBLE_KEYWORDS)
+
+    def test_date_only_format_parsing(self) -> None:
+        """Jooble date '2024-01-15' (no time) parsed via fallback."""
+        job = JoobleJobAdapter.to_job_base(
+            {
+                "id": "test-date",
+                "title": "Date Test Job",
+                "snippet": "Testing date parsing",
+                "company": "TestCo",
+                "location": "London",
+                "link": "https://example.com",
+                "updated": "2024-01-15",
+            }
+        )
+        assert job.date_posted is not None
+        assert job.date_posted.year == 2024
+        assert job.date_posted.month == 1
+        assert job.date_posted.day == 15

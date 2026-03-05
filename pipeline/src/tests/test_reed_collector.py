@@ -306,3 +306,233 @@ class TestReedCollector:
             collector = ReedCollector(client=client, api_key="test-key")
             with pytest.raises(Exception):
                 await collector.fetch_page(skip=0, category="IT")
+
+
+def _make_reed_job(n: int) -> JobBase:
+    """Create a minimal valid JobBase for testing orchestration."""
+    return JobBase(
+        source_name="reed",
+        external_id=str(n),
+        source_url=f"https://reed.co.uk/jobs/{n}",
+        title=f"Test Job {n}",
+        description=f"Description {n}",
+        description_plain=f"Description {n}",
+        company_name="TestCo",
+        location_raw="London",
+        raw_data={"jobId": n},
+    )
+
+
+class TestReedCollectorCoverage:
+    """Coverage tests for Reed collector internals (circuit breaker, errors, orchestration)."""
+
+    @pytest.mark.asyncio()
+    async def test_circuit_breaker_open_returns_empty(self) -> None:
+        """Open circuit breaker → fetch_page returns [] immediately."""
+        from src.collectors.circuit_breaker import CircuitBreaker
+        from src.collectors.reed import ReedCollector
+
+        breaker = CircuitBreaker(name="reed", failure_threshold=1)
+        breaker.record_failure()  # Trip to OPEN
+
+        async with httpx.AsyncClient() as client:
+            collector = ReedCollector(
+                client=client, api_key="test-key", circuit_breaker=breaker
+            )
+            jobs = await collector.fetch_page(skip=0, category="IT")
+            assert jobs == []
+
+    @pytest.mark.asyncio()
+    async def test_fetch_page_success_with_adapter(
+        self, reed_fixture: dict[str, object]
+    ) -> None:
+        """fetch_page parses response through adapter and returns JobBase list."""
+        from src.collectors.reed import ReedCollector
+
+        async def mock_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=reed_fixture)
+
+        transport = httpx.MockTransport(mock_handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            collector = ReedCollector(client=client, api_key="test-key")
+            jobs = await collector.fetch_page(skip=0, category="IT")
+            assert len(jobs) == 2
+            assert all(isinstance(j, JobBase) for j in jobs)
+            assert jobs[0].title == "Senior Python Developer"
+
+    @pytest.mark.asyncio()
+    async def test_non_list_results_raises_parse_error(self) -> None:
+        """Non-list 'results' field raises ParseError."""
+        from src.collectors.reed import ReedCollector
+        from src.models.errors import ParseError
+
+        async def mock_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, json={"results": "not a list", "totalResults": 0}
+            )
+
+        transport = httpx.MockTransport(mock_handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            collector = ReedCollector(client=client, api_key="test-key")
+            with pytest.raises(ParseError):
+                await collector.fetch_page(skip=0, category="IT")
+
+    @pytest.mark.asyncio()
+    async def test_adapter_error_skips_bad_job(
+        self, reed_fixture: dict[str, object]
+    ) -> None:
+        """Invalid job in results is skipped; valid jobs pass through."""
+        from src.collectors.reed import ReedCollector
+
+        bad_job = {
+            "jobId": 999,
+            "jobTitle": "",
+            "jobDescription": "x",
+            "employerName": "A",
+            "locationName": "L",
+            "jobUrl": "https://x.com",
+        }
+        results = list(reed_fixture["results"])  # type: ignore[arg-type]
+        fixture = {"results": [bad_job, *results], "totalResults": 3}
+
+        async def mock_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=fixture)
+
+        transport = httpx.MockTransport(mock_handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            collector = ReedCollector(client=client, api_key="test-key")
+            jobs = await collector.fetch_page(skip=0, category="IT")
+            assert len(jobs) == 2  # bad job skipped
+
+    @pytest.mark.asyncio()
+    async def test_timeout_records_circuit_breaker_failure(self) -> None:
+        """TimeoutException records circuit breaker failure."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.circuit_breaker import CircuitBreaker
+        from src.collectors.reed import ReedCollector
+        from src.models.errors import SourceTimeoutError
+
+        breaker = CircuitBreaker(name="reed")
+        async with httpx.AsyncClient() as client:
+            collector = ReedCollector(
+                client=client, api_key="test-key", circuit_breaker=breaker
+            )
+            with patch(
+                "src.collectors.reed.fetch_with_retry", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.side_effect = httpx.TimeoutException("timeout")
+                with pytest.raises(SourceTimeoutError):
+                    await collector.fetch_page(skip=0, category="IT")
+            assert breaker._failure_count == 1
+
+    @pytest.mark.asyncio()
+    async def test_429_records_rate_limit(self) -> None:
+        """429 HTTPStatusError records rate limit on circuit breaker."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.circuit_breaker import CircuitBreaker
+        from src.collectors.reed import ReedCollector
+
+        breaker = CircuitBreaker(name="reed")
+        mock_request = httpx.Request("GET", "https://reed.co.uk")
+        mock_response = httpx.Response(429, text="Rate limited", request=mock_request)
+
+        async with httpx.AsyncClient() as client:
+            collector = ReedCollector(
+                client=client, api_key="test-key", circuit_breaker=breaker
+            )
+            with patch(
+                "src.collectors.reed.fetch_with_retry", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.side_effect = httpx.HTTPStatusError(
+                    "429", request=mock_request, response=mock_response
+                )
+                with pytest.raises(httpx.HTTPStatusError):
+                    await collector.fetch_page(skip=0, category="IT")
+            # 429 does NOT increment failure count
+            assert breaker._failure_count == 0
+
+    @pytest.mark.asyncio()
+    async def test_5xx_records_circuit_breaker_failure(self) -> None:
+        """500 HTTPStatusError records circuit breaker failure."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.circuit_breaker import CircuitBreaker
+        from src.collectors.reed import ReedCollector
+
+        breaker = CircuitBreaker(name="reed")
+        mock_request = httpx.Request("GET", "https://reed.co.uk")
+        mock_response = httpx.Response(500, text="Error", request=mock_request)
+
+        async with httpx.AsyncClient() as client:
+            collector = ReedCollector(
+                client=client, api_key="test-key", circuit_breaker=breaker
+            )
+            with patch(
+                "src.collectors.reed.fetch_with_retry", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.side_effect = httpx.HTTPStatusError(
+                    "500", request=mock_request, response=mock_response
+                )
+                with pytest.raises(httpx.HTTPStatusError):
+                    await collector.fetch_page(skip=0, category="IT")
+            assert breaker._failure_count == 1
+
+    @pytest.mark.asyncio()
+    async def test_generic_exception_records_failure(self) -> None:
+        """Generic exception records circuit breaker failure."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.circuit_breaker import CircuitBreaker
+        from src.collectors.reed import ReedCollector
+
+        breaker = CircuitBreaker(name="reed")
+        async with httpx.AsyncClient() as client:
+            collector = ReedCollector(
+                client=client, api_key="test-key", circuit_breaker=breaker
+            )
+            with patch(
+                "src.collectors.reed.fetch_with_retry", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.side_effect = RuntimeError("unexpected")
+                with pytest.raises(RuntimeError):
+                    await collector.fetch_page(skip=0, category="IT")
+            assert breaker._failure_count == 1
+
+    @pytest.mark.asyncio()
+    async def test_fetch_category_multi_page(self) -> None:
+        """fetch_category iterates pages until fewer than RESULTS_PER_PAGE."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.reed import RESULTS_PER_PAGE, ReedCollector
+
+        full_page = [_make_reed_job(i) for i in range(RESULTS_PER_PAGE)]
+        partial_page = [_make_reed_job(i + RESULTS_PER_PAGE) for i in range(47)]
+
+        async with httpx.AsyncClient() as client:
+            collector = ReedCollector(client=client, api_key="test-key")
+            with patch.object(
+                collector, "fetch_page", new_callable=AsyncMock
+            ) as mock_fp:
+                mock_fp.side_effect = [full_page, partial_page]
+                jobs = await collector.fetch_category("IT")
+                assert len(jobs) == RESULTS_PER_PAGE + 47
+                assert mock_fp.call_count == 2
+
+    @pytest.mark.asyncio()
+    async def test_fetch_all_sweeps_sectors(self) -> None:
+        """fetch_all calls fetch_category for every Reed sector."""
+        from unittest.mock import AsyncMock, patch
+
+        from src.collectors.reed import REED_SECTORS, ReedCollector
+
+        async with httpx.AsyncClient() as client:
+            collector = ReedCollector(client=client, api_key="test-key")
+            with patch.object(
+                collector, "fetch_category", new_callable=AsyncMock
+            ) as mock_fc:
+                mock_fc.return_value = [_make_reed_job(1)]
+                jobs = await collector.fetch_all()
+                assert len(jobs) == len(REED_SECTORS)
+                assert mock_fc.call_count == len(REED_SECTORS)
