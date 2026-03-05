@@ -10,6 +10,7 @@ dependencies = [
     "numpy>=1.26",
     "supabase>=2.0",
     "beautifulsoup4>=4.12",
+    "modal>=0.68",
 ]
 
 [project.optional-dependencies]
