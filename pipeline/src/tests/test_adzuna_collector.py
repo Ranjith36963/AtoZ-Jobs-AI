@@ -267,7 +267,7 @@ class TestAdzunaCollectorCoverage:
             "location": {"display_name": "L"},
             "redirect_url": "https://x.com",
         }
-        results = list(adzuna_fixture["results"])  # type: ignore[arg-type]
+        results = list(adzuna_fixture["results"])  # type: ignore[call-overload]
         fixture = {"results": [bad_job, *results], "count": 3}
 
         async def mock_handler(request: httpx.Request) -> httpx.Response:

@@ -392,7 +392,7 @@ class TestReedCollectorCoverage:
             "locationName": "L",
             "jobUrl": "https://x.com",
         }
-        results = list(reed_fixture["results"])  # type: ignore[arg-type]
+        results = list(reed_fixture["results"])  # type: ignore[call-overload]
         fixture = {"results": [bad_job, *results], "totalResults": 3}
 
         async def mock_handler(request: httpx.Request) -> httpx.Response:

@@ -62,7 +62,7 @@ class JobBase(BaseModel):
     def not_empty(cls, v: str, info: object) -> str:
         """Reject empty or whitespace-only strings."""
         if not v or not v.strip():
-            raise ValueError(f"{info} must not be empty")  # type: ignore[arg-type]
+            raise ValueError(f"{info} must not be empty")
         return v.strip()
 
     @model_validator(mode="after")
@@ -126,10 +126,10 @@ class ReedJobAdapter:
             description_plain=description_plain,
             company_name=str(data.get("employerName", "")),
             location_raw=str(data.get("locationName", "")),
-            salary_min=float(data["minimumSalary"])
+            salary_min=float(data["minimumSalary"])  # type: ignore[arg-type]
             if data.get("minimumSalary") is not None
             else None,
-            salary_max=float(data["maximumSalary"])
+            salary_max=float(data["maximumSalary"])  # type: ignore[arg-type]
             if data.get("maximumSalary") is not None
             else None,
             salary_raw=None,
@@ -167,9 +167,9 @@ class AdzunaJobAdapter:
             location_raw = str(location_data.get("display_name", ""))
 
         # Latitude/longitude extracted directly (skip postcodes.io)
-        latitude = float(data["latitude"]) if data.get("latitude") is not None else None
+        latitude = float(data["latitude"]) if data.get("latitude") is not None else None  # type: ignore[arg-type]
         longitude = (
-            float(data["longitude"]) if data.get("longitude") is not None else None
+            float(data["longitude"]) if data.get("longitude") is not None else None  # type: ignore[arg-type]
         )
 
         # Salary prediction flag: 0/1 → bool
@@ -209,10 +209,10 @@ class AdzunaJobAdapter:
             location_raw=location_raw,
             latitude=latitude,
             longitude=longitude,
-            salary_min=float(data["salary_min"])
+            salary_min=float(data["salary_min"])  # type: ignore[arg-type]
             if data.get("salary_min") is not None
             else None,
-            salary_max=float(data["salary_max"])
+            salary_max=float(data["salary_max"])  # type: ignore[arg-type]
             if data.get("salary_max") is not None
             else None,
             salary_raw=None,
@@ -289,10 +289,10 @@ class CareerjetJobAdapter:
 
         # v4 structured salary fields
         salary_min = (
-            float(data["salary_min"]) if data.get("salary_min") is not None else None
+            float(data["salary_min"]) if data.get("salary_min") is not None else None  # type: ignore[arg-type]
         )
         salary_max = (
-            float(data["salary_max"]) if data.get("salary_max") is not None else None
+            float(data["salary_max"]) if data.get("salary_max") is not None else None  # type: ignore[arg-type]
         )
         salary_type = str(data["salary_type"]) if data.get("salary_type") else None
         salary_currency = (

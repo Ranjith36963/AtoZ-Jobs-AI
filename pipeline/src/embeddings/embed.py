@@ -40,7 +40,7 @@ async def embed_batch(texts: list[str]) -> list[list[float]]:
                 config=types.EmbedContentConfig(output_dimensionality=GEMINI_DIMS),
             )
             vectors: list[list[float]] = []
-            for emb in result.embeddings:
+            for emb in result.embeddings or []:
                 vec = np.array(emb.values, dtype=np.float32)
                 norm = np.linalg.norm(vec)
                 if norm > 0:

@@ -283,7 +283,7 @@ class TestCareerjetCollectorCoverage:
             "locations": "L",
             "date": "2026-03-05",
         }
-        jobs_data = list(careerjet_fixture["jobs"])  # type: ignore[arg-type]
+        jobs_data = list(careerjet_fixture["jobs"])  # type: ignore[call-overload]
         fixture = {"jobs": [bad_job, *jobs_data], "hits": 3, "pages": 1}
 
         async def mock_handler(request: httpx.Request) -> httpx.Response:

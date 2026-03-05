@@ -47,11 +47,9 @@ def extract_skills(text: str) -> list[tuple[str, float]]:
     # Single-word tokenization
     tokens = re.findall(r"\b[\w#+.]+\b", text_lower)
     for token in tokens:
-        canonical = _SINGLE_WORD_KEYS.get(token)
-        if canonical and canonical not in counts:
-            counts[canonical] += 1
-        elif canonical:
-            counts[canonical] += 1
+        single_match = _SINGLE_WORD_KEYS.get(token)
+        if single_match:
+            counts[single_match] += 1
 
     # Deduplicate: if both "aws" and "amazon web services" matched,
     # they map to the same canonical — Counter handles this automatically

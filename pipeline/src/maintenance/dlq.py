@@ -60,7 +60,7 @@ def should_retry(message: dict[str, object]) -> bool:
         return False
 
     # Check retry count
-    retry_count = int(msg.get("retry_count", 0))
+    retry_count = int(msg.get("retry_count", 0))  # type: ignore[call-overload]
     if retry_count >= DLQ_MAX_RETRIES:
         return False
 
@@ -114,7 +114,7 @@ def process_dlq_batch(
     for message in messages:
         msg = _get_msg(message)
 
-        retry_count = int(msg.get("retry_count", 0))
+        retry_count = int(msg.get("retry_count", 0))  # type: ignore[call-overload]
 
         if retry_count >= DLQ_MAX_RETRIES:
             exhausted += 1

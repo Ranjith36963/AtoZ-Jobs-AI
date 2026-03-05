@@ -35,13 +35,13 @@ async def embed_batch_openai(texts: list[str]) -> list[list[float]]:
     """Embed texts via OpenAI text-embedding-3-small (768 dims)."""
     client = _get_openai_client()
     try:
-        response = client.embeddings.create(  # type: ignore[union-attr]
+        response = client.embeddings.create(  # type: ignore[attr-defined]
             model=OPENAI_MODEL,
             input=texts,
             dimensions=OPENAI_DIMS,
         )
         vectors: list[list[float]] = []
-        for item in response.data:  # type: ignore[union-attr]
+        for item in response.data:
             vec = np.array(item.embedding, dtype=np.float32)
             norm = np.linalg.norm(vec)
             if norm > 0:

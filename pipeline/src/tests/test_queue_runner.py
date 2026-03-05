@@ -171,4 +171,4 @@ class TestFullPipeline:
         data = _make_job_data(title="")
         result = run_pipeline_sync(data)
         assert result.get("failed_stage") == "parse"
-        assert result.get("retry_count", 0) >= 1
+        assert int(result.get("retry_count", 0)) >= 1  # type: ignore[call-overload]

@@ -268,7 +268,7 @@ class TestJoobleCollectorCoverage:
             "link": "https://x.com",
             "updated": "2026-03-05",
         }
-        jobs_data = list(jooble_fixture["jobs"])  # type: ignore[arg-type]
+        jobs_data = list(jooble_fixture["jobs"])  # type: ignore[call-overload]
         fixture = {"jobs": [bad_job, *jobs_data]}
         call_count = 0
 

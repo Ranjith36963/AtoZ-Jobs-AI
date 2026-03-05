@@ -45,10 +45,10 @@ def process_normalize(job_data: dict[str, object]) -> dict[str, object]:
 
     # Salary normalization
     annual_min, annual_max = normalize_salary(
-        salary_min=float(job_data["salary_min"])
+        salary_min=float(job_data["salary_min"])  # type: ignore[arg-type]
         if job_data.get("salary_min") is not None
         else None,
-        salary_max=float(job_data["salary_max"])
+        salary_max=float(job_data["salary_max"])  # type: ignore[arg-type]
         if job_data.get("salary_max") is not None
         else None,
         salary_raw=str(job_data.get("salary_raw", "")) or None,
@@ -121,7 +121,7 @@ def process_summary(job_data: dict[str, object]) -> dict[str, object]:
         company_name=str(job_data.get("company_name", "")),
         industry=str(job_data.get("category", "Unknown")),
         skills=skill_names,
-        employment_type=list(employment_type) if employment_type else None,
+        employment_type=list(employment_type) if employment_type else None,  # type: ignore[call-overload]
         location_type=str(job_data.get("location_type", "onsite")),
         location_city=str(job_data.get("location_city", "")) or None,
         location_region=str(job_data.get("location_region", "")) or None,
@@ -139,7 +139,7 @@ def handle_failure(
 
     Returns updated job_data with retry_count, last_error, and failed_stage.
     """
-    retry_count = int(job_data.get("retry_count", 0)) + 1
+    retry_count = int(job_data.get("retry_count", 0)) + 1  # type: ignore[call-overload]
     job_data["retry_count"] = retry_count
     job_data["last_error"] = str(error)
     job_data["failed_stage"] = stage
