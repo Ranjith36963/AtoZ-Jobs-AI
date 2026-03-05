@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-03-05
 
-## Current Stage: 2 — Collection (Code Complete, Awaiting Infra Verification)
+## Current Stage: 3 — Processing (Code Complete)
 
 ---
 
@@ -91,32 +91,57 @@
 
 ---
 
-### Stage 3: Processing — NOT STARTED (0/20)
+### Stage 3: Processing — CODE COMPLETE (20/20), GATES PENDING
 
-#### Code Deliverables
-- [ ] Salary normalizer (12 regex patterns, constants: 252/1950/12) — `pipeline/src/processing/salary.py`
-- [ ] Location normalizer (10 cases, postcodes.io, city fallback) — `pipeline/src/processing/location.py`
-- [ ] Category mapper (Reed/Adzuna exhaustive + keyword inference) — `pipeline/src/processing/category.py`
-- [ ] Seniority extractor (5 regex patterns) — `pipeline/src/processing/seniority.py`
-- [ ] Structured summary builder (6-field template, no LLM) — `pipeline/src/processing/summary.py`
-- [ ] Skill dictionary (~100+ skills placeholder) — `pipeline/src/skills/dictionary.py`
-- [ ] Skill extractor (tokenize, match, cap at 15) — `pipeline/src/skills/extractor.py`
-- [ ] Embedding pipeline (Gemini embedding-001, 768-dim, re-normalize) — `pipeline/src/embeddings/embed.py`
-- [ ] Embedding fallback (OpenAI text-embedding-3-small) — `pipeline/src/embeddings/fallback.py`
-- [ ] Deduplication gate (content_hash check) — `pipeline/src/processing/dedup.py`
-- [ ] Queue runner (wire all 6 queues) — `pipeline/src/processing/queue_runner.py`
+#### Code Deliverables (all done)
+- [x] Salary normalizer (12 regex patterns, constants: 252/1950/12) — `pipeline/src/processing/salary.py`
+- [x] Location normalizer (10 cases, postcodes.io, city fallback) — `pipeline/src/processing/location.py`
+- [x] Category mapper (Reed/Adzuna exhaustive + keyword inference) — `pipeline/src/processing/category.py`
+- [x] Seniority extractor (5 regex patterns) — `pipeline/src/processing/seniority.py`
+- [x] Structured summary builder (6-field template, no LLM) — `pipeline/src/processing/summary.py`
+- [x] Skill dictionary (~150 UK skills placeholder) — `pipeline/src/skills/dictionary.py`
+- [x] Skill extractor (tokenize, match, cap at 15) — `pipeline/src/skills/extractor.py`
+- [x] Embedding pipeline (Gemini embedding-001, 768-dim, re-normalize) — `pipeline/src/embeddings/embed.py`
+- [x] Embedding fallback (OpenAI text-embedding-3-small) — `pipeline/src/embeddings/fallback.py`
+- [x] Deduplication gate (content_hash check) — `pipeline/src/processing/dedup.py`
+- [x] Queue runner (wire all 6 queues) — `pipeline/src/processing/queue_runner.py`
 
-#### Tests
-- [ ] test_salary_normalizer.py (12 patterns + sanity + property-based)
-- [ ] test_location_normalizer.py (10 cases + postcodes.io mock)
-- [ ] test_category_mapper.py (Reed + Adzuna + keyword inference)
-- [ ] test_seniority.py (5 levels + 'Not specified')
-- [ ] test_structured_summary.py (6-field template)
-- [ ] test_skill_extractor.py (dictionary match, max 15, confidence)
-- [ ] test_embeddings.py (768-dim, re-normalize, fallback)
-- [ ] test_dedup.py (hash match, hash mismatch, UPSERT)
+#### Tests (all done — 300 total tests passing)
+- [x] test_salary_normalizer.py (12 patterns + sanity + property-based)
+- [x] test_location_normalizer.py (10 cases + postcodes.io mock)
+- [x] test_category_mapper.py (Reed + Adzuna + keyword inference)
+- [x] test_seniority.py (5 levels + 'Not specified')
+- [x] test_structured_summary.py (6-field template)
+- [x] test_skill_extractor.py (dictionary match, max 15, confidence)
+- [x] test_embeddings.py (768-dim, re-normalize, fallback)
+- [x] test_dedup.py (hash match, hash mismatch, UPSERT)
+- [x] test_queue_runner.py (full pipeline: raw > normalized > dedup > summary)
 
-#### Gate 3 (P1-P24) — all pending
+#### Gate 3 Checks (code-verifiable)
+- [x] P1: Salary — all 12 patterns produce correct annual_min/annual_max
+- [x] P2: Salary sanity — values < 10K or > 500K rejected (set to NULL)
+- [x] P3: Salary API fields priority — structured fields over salary_raw
+- [x] P4: Salary property test — hypothesis @given(st.text()) never raises
+- [x] P5: Location — 10 cases resolve correctly (London, Remote, Hybrid, etc.)
+- [x] P6: Location — Adzuna uses provided lat/lon directly
+- [ ] P7: Location — postcodes.io lookup — *requires network*
+- [x] P8: Location — city fallback table works (Manchester coords)
+- [x] P9: Category — all Reed sectors map correctly
+- [x] P10: Category — all Adzuna tags map correctly
+- [x] P11: Category — keyword inference (Jooble title > Technology)
+- [x] P12: Category — fallback to 'Other'
+- [x] P13: Seniority — Senior/Junior/Executive/Not specified all correct
+- [x] P14: Structured summary — 6-field template, no Summary/Requirements
+- [x] P15: Skill extraction — Python/AWS extracted, max 15, confidence=1.0
+- [x] P16: Embeddings — 768-dim vectors, re-normalized (mocked Gemini)
+- [x] P17: Embeddings — OpenAI fallback returns 768 dims (mocked)
+- [x] P18: Dedup — same hash raises DuplicateError
+- [ ] P19: Dedup UPSERT — *requires live DB*
+- [x] P20: Queue runner — full flow raw > normalized > dedup > summary
+- [x] P21: DLQ routing — failure handling increments retry_count
+- [ ] P22: Coverage processing >= 90% — *needs verification*
+- [ ] P23: Coverage embeddings >= 85% — *needs verification*
+- [ ] P24: pipeline_health ready_without_embedding = 0 — *requires DB*
 
 ---
 
@@ -139,19 +164,19 @@
 |-------|------|-------|--------|
 | 1. Foundation | 25/25 (100%) | 0/13 (need local DB) | Code complete |
 | 2. Collection | 21/21 (100%) | 10/13 (3 need infra) | Code complete |
-| 3. Processing | 0/20 (0%) | 0/24 | Not started |
+| 3. Processing | 20/20 (100%) | 18/24 (6 need infra) | Code complete |
 | 4. Maintenance | 0/8 (0%) | 0/14 | Not started |
-| **Total** | **46/74 (62%)** | **10/64 (16%)** | |
+| **Total** | **66/74 (89%)** | **28/64 (44%)** | |
 
 ## Verification Totals (per GATES.md)
 
 | Category | Total | Verified | Remaining |
 |----------|-------|----------|-----------|
-| Gate checks (F+C+P+M) | 64 | 10 | 54 |
+| Gate checks (F+C+P+M) | 64 | 28 | 36 |
 | Test search queries | 10 | 0 | 10 |
 | Go/No-Go items | 20 | 0 | 20 |
 | Performance SLAs | 8 | 0 | 8 |
-| **Grand total** | **102** | **10** | **92** |
+| **Grand total** | **102** | **28** | **74** |
 
 ## What's Blocking
 
