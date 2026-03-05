@@ -257,10 +257,10 @@ class JoobleJobAdapter:
                     tzinfo=timezone.utc
                 )
 
-        # 45-day default expiry
+        # 30-day default expiry (SPEC §6: Jooble = 30 days)
         date_expires = None
         if date_posted:
-            date_expires = date_posted + timedelta(days=45)
+            date_expires = date_posted + timedelta(days=30)
 
         return JobBase(
             source_name="jooble",
@@ -325,9 +325,10 @@ class CareerjetJobAdapter:
                     tzinfo=timezone.utc
                 )
 
+        # 30-day default expiry (SPEC §6: Careerjet = 30 days)
         date_expires = None
         if date_posted:
-            date_expires = date_posted + timedelta(days=45)
+            date_expires = date_posted + timedelta(days=30)
 
         return JobBase(
             source_name="careerjet",

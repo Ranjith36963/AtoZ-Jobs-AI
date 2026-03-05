@@ -1,6 +1,7 @@
 """Tests for Careerjet collector and adapter (GATES C4, C7, C9, C10)."""
 
 import json
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -80,6 +81,15 @@ class TestCareerjetAdapter:
         job = CareerjetJobAdapter.to_job_base(careerjet_job_data)
         assert job.raw_data == careerjet_job_data
 
+    def test_30_day_default_expiry(
+        self, careerjet_job_data: dict[str, object]
+    ) -> None:
+        """Careerjet uses 30-day default expiry per SPEC §6."""
+        job = CareerjetJobAdapter.to_job_base(careerjet_job_data)
+        assert job.date_posted is not None
+        assert job.date_expires is not None
+        assert job.date_expires - job.date_posted == timedelta(days=30)
+
 
 class TestCareerjetCollector:
     """Test Careerjet collector (Gate C4, C10)."""
@@ -158,3 +168,22 @@ class TestCareerjetCollector:
         assert CareerjetCollector.has_more_pages(current_page=1, total_pages=5)
         assert not CareerjetCollector.has_more_pages(current_page=5, total_pages=5)
         assert not CareerjetCollector.has_more_pages(current_page=1, total_pages=0)
+
+    @pytest.mark.asyncio()
+    async def test_malformed_json(self) -> None:
+        """Malformed JSON response handled without crash (Gate C10)."""
+        from src.collectors.careerjet import CareerjetCollector
+
+        async def malformed_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="not valid json {{{")
+
+        transport = httpx.MockTransport(malformed_handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            collector = CareerjetCollector(
+                client=client,
+                affid="test-affid",
+                user_ip="10.0.0.1",
+                user_agent="AtoZ-Jobs/0.1",
+            )
+            with pytest.raises(Exception):
+                await collector.fetch_page(keywords="test", page=1)

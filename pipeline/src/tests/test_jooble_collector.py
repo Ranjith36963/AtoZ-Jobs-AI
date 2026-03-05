@@ -1,6 +1,7 @@
 """Tests for Jooble collector and adapter (GATES C3, C7, C9, C10)."""
 
 import json
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -73,6 +74,13 @@ class TestJoobleAdapter:
         """raw_data preserved."""
         job = JoobleJobAdapter.to_job_base(jooble_job_data)
         assert job.raw_data == jooble_job_data
+
+    def test_30_day_default_expiry(self, jooble_job_data: dict[str, object]) -> None:
+        """Jooble uses 30-day default expiry per SPEC §6."""
+        job = JoobleJobAdapter.to_job_base(jooble_job_data)
+        assert job.date_posted is not None
+        assert job.date_expires is not None
+        assert job.date_expires - job.date_posted == timedelta(days=30)
 
 
 class TestJoobleCollector:
@@ -151,6 +159,20 @@ class TestJoobleCollector:
             raise httpx.TimeoutException("timeout")
 
         transport = httpx.MockTransport(timeout_handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            collector = JoobleCollector(client=client, api_key="test-key")
+            with pytest.raises(Exception):
+                await collector.fetch_all(keyword="test")
+
+    @pytest.mark.asyncio()
+    async def test_malformed_json(self) -> None:
+        """Malformed JSON response handled without crash (Gate C10)."""
+        from src.collectors.jooble import JoobleCollector
+
+        async def malformed_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="not valid json {{{")
+
+        transport = httpx.MockTransport(malformed_handler)
         async with httpx.AsyncClient(transport=transport) as client:
             collector = JoobleCollector(client=client, api_key="test-key")
             with pytest.raises(Exception):
