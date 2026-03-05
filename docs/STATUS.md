@@ -14,8 +14,11 @@
 - [x] Migration 003: Indexes
 - [x] Migration 004: Queues, cron, health view
 - [x] Migration 005: RLS policies
-- [x] seed.sql
+- [x] Migration 006: UK cities reference table (geocoding fallback)
+- [x] Migration 007: UK cities RLS
+- [x] seed.sql (4 sources + ~100 UK cities)
 - [x] supabase/config.toml
+- [x] .gitignore (Python + Node.js + Supabase + security patterns)
 - [x] docs/architecture.md, docs/STATUS.md
 - [x] docs/phase-1/ (SPEC.md, PLAYBOOK.md, GATES.md)
 - [x] .claude/ agents, skills, rules, commands
