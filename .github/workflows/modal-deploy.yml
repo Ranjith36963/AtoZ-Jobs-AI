@@ -8,8 +8,6 @@ jobs:
         working-directory: pipeline
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: claude/setup-foundation-files-EDBdF
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
