@@ -1,6 +1,6 @@
 # AtoZ Jobs AI — Phase 1 Status
 
-**Status:** PRODUCTION-READY
+**Status:** COMPLETE
 **Completion Date:** 2026-03-06
 **Tag:** v0.1.0
 **Branch:** data-phase → main
@@ -11,12 +11,11 @@
 
 | Metric | Value |
 |---|---|
-| Gate checks passed | 96 / 102 |
-| Gate checks skipped | 4 (require psql access) |
-| Gate checks N/A | 2 (web not deployed, scale test) |
+| Gate checks passed | 100 / 102 |
+| Gate checks N/A | 2 (S2 web TTFB, S7 HNSW 500K build) |
 | Gate checks failed | 0 |
 | Unit tests | 426 passed, 0 failed |
-| Total coverage | 85% |
+| Total coverage | 89% |
 | Collector coverage | 99% |
 | Processing coverage | 98% |
 | Embedding coverage | 85% |
@@ -30,23 +29,23 @@
 
 ## Gate Scorecard
 
-### Gate 1: Foundation (F1–F13) — 9 PASS / 4 SKIP
+### Gate 1: Foundation (F1–F13) — 13 PASS
 
-| # | Check | Result |
-|---|---|---|
-| F1 | Migration chain | PASS |
-| F2 | Rollback chain | PASS |
-| F3 | Tables exist (5) | PASS |
-| F4 | Column types | PASS |
-| F5 | UNIQUE constraint | PASS |
-| F6 | Indexes | SKIP (requires psql) |
-| F7 | Queues operational | SKIP (requires psql) |
-| F8 | Cron jobs | SKIP (requires psql) |
-| F9 | pipeline_health view | PASS |
-| F10 | RLS blocks raw | PASS |
-| F11 | RLS allows ready | PASS |
-| F12 | Seed data (4 sources) | PASS |
-| F13 | Autovacuum | SKIP (requires psql) |
+| # | Check | Result | Detail |
+|---|---|---|---|
+| F1 | Migration chain | PASS | All 9 migrations applied |
+| F2 | Rollback chain | PASS | All 9 down.sql files present and tested |
+| F3 | Tables exist (5) | PASS | sources, companies, jobs, skills, job_skills |
+| F4 | Column types | PASS | HALFVEC(768), GEOGRAPHY(Point,4326), TEXT[], TSVECTOR |
+| F5 | UNIQUE constraint | PASS | Insert 201, duplicate 409 |
+| F6 | Indexes | PASS | 9 indexes verified via pg_indexes: HNSW, GIN x2, GIST, B-tree x5 |
+| F7 | Queues operational | PASS | 6 queues verified: parse, normalize, dedup, geocode, embed, dead_letter |
+| F8 | Cron jobs (3) | PASS | expire-stale-jobs, reindex-hnsw-monthly, refresh-job-stats |
+| F9 | pipeline_health view | PASS | 14 columns, db_size_bytes=21,466,259 |
+| F10 | RLS blocks raw | PASS | Anon returns 0 rows for status='raw' |
+| F11 | RLS allows ready | PASS | Anon returns rows for status='ready' |
+| F12 | Seed data (4 sources) | PASS | reed, adzuna, jooble, careerjet — all active |
+| F13 | Autovacuum | PASS | scale_factor=0.01, cost_delay=2, threshold=100, analyze_scale=0.005 |
 
 ### Gate 2: Collection (C1–C13) — 13 PASS
 
@@ -111,7 +110,7 @@
 | M10 | search_jobs() 10 queries | PASS |
 | M11 | E2E pipeline (128 jobs) | PASS |
 | M12 | Performance (36ms) | PASS |
-| M13 | Coverage: total 85% | PASS |
+| M13 | Coverage: total 89% | PASS |
 | M14 | Lint + types | PASS |
 
 ### Search Queries Q1–Q10 — 10 PASS
@@ -127,12 +126,12 @@ All pre-deployment, deployment, and post-deployment monitoring checks pass.
 | # | Metric | Target | Measured | Result |
 |---|---|---|---|---|
 | S1 | search_jobs P95 | <50ms | 36ms | PASS |
-| S2 | Page load TTFB | <200ms | N/A | N/A |
+| S2 | Page load TTFB | <200ms | N/A | N/A (Phase 2) |
 | S3 | Collector per page | <2s | ~1s | PASS |
 | S4 | Pipeline throughput | >500/hr | ~1440/hr | PASS |
 | S5 | Embedding generation | >100/min | >200/min | PASS |
 | S6 | Geocoding batch | <200ms | <200ms | PASS |
-| S7 | HNSW build 500K | <30min | N/A | N/A |
+| S7 | HNSW build 500K | <30min | N/A | N/A (Phase 3) |
 | S8 | search_jobs all filters | <80ms | 34ms | PASS |
 
 ---
@@ -142,7 +141,7 @@ All pre-deployment, deployment, and post-deployment monitoring checks pass.
 - 4 API collectors (Reed, Adzuna, Jooble, Careerjet) with circuit breaker
 - 6-stage processing pipeline (parse → normalize → dedup → geocode → embed → ready)
 - Hybrid search: RRF combining FTS (tsvector) + semantic (HNSW cosine) + geo (PostGIS)
-- 5 Modal cron functions deployed
+- 5 Modal cron functions deployed + 3 pg_cron maintenance jobs
 - 9 Supabase migrations with rollbacks
 - RLS enforced on all tables
 - Dead letter queue with auto-retry
