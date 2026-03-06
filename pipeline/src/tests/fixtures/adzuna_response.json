@@ -1,0 +1,57 @@
+{
+  "results": [
+    {
+      "id": "4987654321",
+      "title": "Machine Learning Engineer",
+      "description": "Exciting ML engineer role working on NLP and computer vision projects. Must have experience with PyTorch and transformers.",
+      "redirect_url": "https://www.adzuna.co.uk/jobs/details/4987654321",
+      "created": "2026-03-05T09:00:00Z",
+      "location": {
+        "display_name": "Cambridge, Cambridgeshire",
+        "area": ["UK", "East of England", "Cambridgeshire", "Cambridge"]
+      },
+      "latitude": 52.2053,
+      "longitude": 0.1218,
+      "salary_min": 55000.0,
+      "salary_max": 75000.0,
+      "salary_is_predicted": 0,
+      "category": {
+        "tag": "it-jobs",
+        "label": "IT Jobs"
+      },
+      "company": {
+        "display_name": "TechVentures UK"
+      },
+      "contract_type": "permanent",
+      "contract_time": "full_time"
+    },
+    {
+      "id": "4987654322",
+      "title": "Junior Web Developer",
+      "description": "Join our web development team. HTML, CSS, JavaScript required.",
+      "redirect_url": "https://www.adzuna.co.uk/jobs/details/4987654322",
+      "created": "2026-03-04T15:30:00Z",
+      "location": {
+        "display_name": "Bristol, City of Bristol",
+        "area": ["UK", "South West", "City of Bristol", "Bristol"]
+      },
+      "latitude": 51.4545,
+      "longitude": -2.5879,
+      "salary_min": 25000.0,
+      "salary_max": 32000.0,
+      "salary_is_predicted": 1,
+      "category": {
+        "tag": "it-jobs",
+        "label": "IT Jobs"
+      },
+      "company": {
+        "display_name": "WebAgency Bristol"
+      },
+      "contract_type": "permanent",
+      "contract_time": "full_time"
+    }
+  ],
+  "count": 1523,
+  "mean": 42500.0,
+  "__class__": "Adzuna::API::Response::JobSearchResults"
+}
