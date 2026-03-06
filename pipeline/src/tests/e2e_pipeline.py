@@ -43,7 +43,7 @@ if not JOOBLE_API_KEY or not GOOGLE_API_KEY:
     sys.exit(1)
 
 
-def run_sql(sql: str, retries: int = 3) -> list[dict[str, object]] | None:
+def run_sql(sql: str, retries: int = 3) -> list[dict[str, str | int | float | bool | None]] | None:
     for i in range(retries):
         r = httpx.post(MGMT_URL, headers=MGMT_HEADERS, json={"query": sql}, timeout=30)
         if r.status_code in (200, 201):
@@ -208,12 +208,12 @@ async def main() -> None:
     inserted = 0
     failed = 0
     for i, job in enumerate(processed):
-        vec = all_vecs[i] if i < len(all_vecs) else None
-        if vec is None:
+        vec_entry = all_vecs[i] if i < len(all_vecs) else None
+        if vec_entry is None:
             failed += 1
             continue
 
-        vec_str = "[" + ",".join(f"{v:.6f}" for v in vec) + "]"
+        vec_str = "[" + ",".join(f"{v:.6f}" for v in vec_entry) + "]"
 
         sql = f"""
         INSERT INTO jobs (source_id, external_id, title, company_name, source_url,
@@ -248,7 +248,8 @@ async def main() -> None:
     print("\n=== STEP 5: Verification ===")
     time.sleep(2)
     verify = run_sql("SELECT count(*) as cnt FROM jobs WHERE status = 'ready' AND embedding IS NOT NULL;")
-    ready_count = verify[0]["cnt"] if verify else 0
+    raw_cnt = verify[0]["cnt"] if verify else 0
+    ready_count = int(raw_cnt) if raw_cnt is not None else 0
     print(f"  Jobs at status='ready' with embedding: {ready_count}")
     print(f"  M11 RESULT: {'PASS' if ready_count >= 50 else 'FAIL'} — {ready_count} ready jobs (target >= 50)")
 
@@ -260,10 +261,10 @@ async def main() -> None:
         print(f"  search_jobs('developer') returned {len(search_result)} results")
         for row in search_result[:3]:
             print(f"    - {row.get('title', '?')} ({row.get('rrf_score', '?')})")
-        print(f"  search_jobs RESULT: PASS")
+        print("  search_jobs RESULT: PASS")
     else:
-        print(f"  search_jobs returned 0 results")
-        print(f"  search_jobs RESULT: FAIL")
+        print("  search_jobs returned 0 results")
+        print("  search_jobs RESULT: FAIL")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 DROP VIEW IF EXISTS pipeline_health;
 
+SELECT cron.unschedule('refresh-job-stats');
 SELECT cron.unschedule('expire-stale-jobs');
 SELECT cron.unschedule('reindex-hnsw-monthly');
 
