@@ -48,6 +48,13 @@ SELECT cron.schedule(
     $$
 );
 
+-- Refresh planner statistics every 6 hours for optimal search_jobs() query plans
+SELECT cron.schedule(
+    'refresh-job-stats',
+    '30 */6 * * *',
+    $$ANALYZE jobs$$
+);
+
 -- Pipeline health monitoring view
 CREATE VIEW pipeline_health AS
 SELECT
