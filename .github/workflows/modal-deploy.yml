@@ -7,12 +7,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: data-phase
+      - run: ls -la
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install modal uv
-      - run: cd pipeline && uv sync
-      - run: cd pipeline && modal deploy src/modal_app.py
+      - run: uv sync
+      - run: modal deploy src/modal_app.py
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
