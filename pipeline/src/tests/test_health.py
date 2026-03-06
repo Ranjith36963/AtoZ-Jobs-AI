@@ -20,8 +20,8 @@ def _healthy_metrics() -> dict[str, int]:
         "jobs_with_retries": 10,
         "jobs_in_dlq": 5,
         "ready_without_embedding": 0,
-        "ready_without_salary": 100,
-        "ready_without_location": 20,
+        "ready_without_salary": 0,
+        "ready_without_location": 0,
         "db_size_bytes": 500_000_000,
     }
 
@@ -67,14 +67,32 @@ class TestEvaluateAlerts:
         assert any(a["level"] == "warning" for a in alerts)
         assert any("ready_without_embedding" in a["message"] for a in alerts)
 
+    def test_ready_without_salary_warning(self) -> None:
+        """ready_without_salary > 0 → WARNING alert."""
+        metrics = _healthy_metrics()
+        metrics["ready_without_salary"] = 25
+        alerts = evaluate_alerts(metrics)
+        assert any(a["level"] == "warning" for a in alerts)
+        assert any("ready_without_salary" in a["message"] for a in alerts)
+
+    def test_ready_without_location_warning(self) -> None:
+        """ready_without_location > 0 → WARNING alert."""
+        metrics = _healthy_metrics()
+        metrics["ready_without_location"] = 10
+        alerts = evaluate_alerts(metrics)
+        assert any(a["level"] == "warning" for a in alerts)
+        assert any("ready_without_location" in a["message"] for a in alerts)
+
     def test_multiple_alerts(self) -> None:
         """Multiple alert conditions can fire simultaneously."""
         metrics = _healthy_metrics()
         metrics["jobs_ingested_last_hour"] = 0
         metrics["jobs_in_dlq"] = 200
         metrics["ready_without_embedding"] = 10
+        metrics["ready_without_salary"] = 5
+        metrics["ready_without_location"] = 3
         alerts = evaluate_alerts(metrics)
-        assert len(alerts) == 3
+        assert len(alerts) == 5
 
 
 # ── log_health_metrics ──

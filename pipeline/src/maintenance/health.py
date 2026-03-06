@@ -5,6 +5,8 @@ Check alert conditions:
   jobs_ingested_last_hour = 0 → CRITICAL
   jobs_in_dlq > 100 → WARNING
   ready_without_embedding > 0 → WARNING
+  ready_without_salary > 0 → WARNING
+  ready_without_location > 0 → WARNING
 """
 
 import structlog
@@ -62,6 +64,34 @@ def evaluate_alerts(metrics: dict[str, int]) -> list[dict[str, str]]:
                 "message": (
                     f"ready_without_embedding = {no_embed_val}: "
                     "Check GOOGLE_API_KEY, Gemini API status, rate limits"
+                ),
+            }
+        )
+
+    # WARNING: Ready jobs missing salary data
+    no_salary = metrics.get("ready_without_salary")
+    no_salary_val = int(no_salary) if no_salary is not None else 0
+    if no_salary_val > 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "message": (
+                    f"ready_without_salary = {no_salary_val}: "
+                    "Check salary normalizer, source data quality"
+                ),
+            }
+        )
+
+    # WARNING: Ready jobs missing location data
+    no_location = metrics.get("ready_without_location")
+    no_location_val = int(no_location) if no_location is not None else 0
+    if no_location_val > 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "message": (
+                    f"ready_without_location = {no_location_val}: "
+                    "Check geocoder, postcodes.io, city fallback table"
                 ),
             }
         )

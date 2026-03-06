@@ -34,7 +34,8 @@ async def embed_batch(texts: list[str]) -> list[list[float]]:
     client = _get_client()
     for attempt in range(MAX_RETRIES):
         try:
-            result = client.models.embed_content(
+            result = await asyncio.to_thread(
+                client.models.embed_content,
                 model=GEMINI_MODEL,
                 contents=texts,
                 config=types.EmbedContentConfig(output_dimensionality=GEMINI_DIMS),

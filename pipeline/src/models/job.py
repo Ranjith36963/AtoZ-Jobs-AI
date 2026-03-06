@@ -67,11 +67,11 @@ class JobBase(BaseModel):
 
     @model_validator(mode="after")
     def salary_sanity(self) -> "JobBase":
-        """Reject negative salaries or unreasonably high values (>£1M)."""
+        """Reject negative salaries or unreasonably high values (>£500K)."""
         for field_name in ("salary_min", "salary_max"):
             value = getattr(self, field_name)
-            if value is not None and (value < 0 or value > 1_000_000):
-                raise ValueError(f"{field_name}={value} out of range [0, 1000000]")
+            if value is not None and (value < 0 or value > 500_000):
+                raise ValueError(f"{field_name}={value} out of range [0, 500000]")
         return self
 
     @computed_field  # type: ignore[prop-decorator]
