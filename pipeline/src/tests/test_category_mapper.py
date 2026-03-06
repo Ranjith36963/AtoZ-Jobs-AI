@@ -126,6 +126,34 @@ class TestKeywordInference:
         assert map_category("careerjet", title="Mechanical Engineer") == "Engineering"
 
 
+class TestJoobleCareerjetCategoryMapping:
+    """Jooble/Careerjet: try both Reed and Adzuna maps before keyword inference."""
+
+    def test_jooble_with_reed_category(self) -> None:
+        """Jooble providing a Reed-style category should map correctly."""
+        assert map_category("jooble", "IT & Telecoms") == "Technology"
+
+    def test_jooble_with_adzuna_category(self) -> None:
+        """Jooble providing an Adzuna-style category should map correctly."""
+        assert map_category("jooble", "healthcare-nursing-jobs") == "Healthcare"
+
+    def test_careerjet_with_reed_category(self) -> None:
+        """Careerjet providing a Reed-style category should map correctly."""
+        assert map_category("careerjet", "Legal") == "Legal"
+
+    def test_careerjet_with_adzuna_category(self) -> None:
+        """Careerjet providing an Adzuna-style category should map correctly."""
+        assert map_category("careerjet", "engineering-jobs") == "Engineering"
+
+    def test_jooble_unknown_category_falls_to_keyword(self) -> None:
+        """Unknown category from Jooble → fall through to keyword inference."""
+        assert map_category("jooble", "random-category", "Senior Nurse") == "Healthcare"
+
+    def test_careerjet_unknown_category_falls_to_other(self) -> None:
+        """Unknown category + no keyword match → Other."""
+        assert map_category("careerjet", "random-category", "General Worker") == "Other"
+
+
 class TestCategoryFallback:
     """Fallback to 'Other' (Gate P12)."""
 
