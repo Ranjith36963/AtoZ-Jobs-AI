@@ -1,0 +1,28 @@
+{
+  "jobs": [
+    {
+      "title": "DevOps Engineer",
+      "location": "Edinburgh, Scotland",
+      "snippet": "We need a DevOps engineer with Kubernetes and AWS experience. Terraform knowledge preferred.",
+      "salary": "£50,000 - £70,000",
+      "source": "reed.co.uk",
+      "type": "Full-time",
+      "link": "https://jooble.org/jdp/12345/devops-engineer",
+      "company": "CloudOps Scotland",
+      "updated": "2026-03-05",
+      "id": "jb-7890123456"
+    },
+    {
+      "title": "Frontend Developer",
+      "location": "Leeds",
+      "snippet": "React and TypeScript developer needed for e-commerce platform.",
+      "salary": "",
+      "source": "indeed.co.uk",
+      "type": "Full-time",
+      "link": "https://jooble.org/jdp/67890/frontend-developer",
+      "company": "ShopTech Ltd",
+      "updated": "2026-03-04",
+      "id": "jb-7890123457"
+    }
+  ]
+}
