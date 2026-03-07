@@ -72,6 +72,16 @@ Key insight: embeddings capture semantic intent, SQL filters handle factual cons
 - After writing auth/input/data code, review for OWASP Top 10
 - Supabase RLS enforced on every table — no exceptions
 
+## Phase 2 Additions
+- **Skills**: SpaCy PhraseMatcher (two-layer: LOWER + ORTH), ESCO taxonomy, dictionary_builder with ~450+ patterns
+- **Dedup**: pg_trgm fuzzy matching + MinHash/LSH (datasketch, xxhash) + composite scoring (threshold 0.65)
+- **Salary**: XGBoost prediction with TF-IDF + one-hot region/category + ordinal seniority features
+- **Enrichment**: Companies House API client with SIC code → section letter (A-U) mapping
+- **Search**: search_jobs_v2() with 12 params, 18 return fields, duplicate exclusion, skill filters
+- **Re-ranking**: cross-encoder/ms-marco-MiniLM-L-6-v2 for query-document relevance scoring
+- **Profiles**: user_profiles table with RLS, 768-dim Gemini embeddings for personalization
+- **Migrations**: 000010 (skills taxonomy), 000011 (advanced dedup), 000012 (salary/company), 000013 (user profiles/search_v2)
+
 ## Critical Rules
 - When uncertain, state uncertainty. Present tradeoffs, do not choose silently.
 - For complex tasks, plan before coding. Do not implement without approved plan.
