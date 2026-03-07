@@ -57,8 +57,8 @@ class TestPredictSalary:
         predictions = predict_salary(model, test_features)
 
         for pred in predictions:
-            assert pred["predicted_min"] >= MIN_SALARY * 0.9
-            assert pred["predicted_max"] <= MAX_SALARY * 1.1
+            assert float(pred["predicted_min"]) >= MIN_SALARY * 0.9
+            assert float(pred["predicted_max"]) <= MAX_SALARY * 1.1
 
     def test_prediction_structure(self) -> None:
         features, labels = _synthetic_data(200)
@@ -72,7 +72,7 @@ class TestPredictSalary:
             assert "predicted_min" in pred
             assert "predicted_max" in pred
             assert "confidence" in pred
-            assert pred["predicted_min"] < pred["predicted_max"]
+            assert float(pred["predicted_min"]) < float(pred["predicted_max"])
 
     def test_confidence_values(self) -> None:
         features, labels = _synthetic_data(200)
@@ -82,7 +82,7 @@ class TestPredictSalary:
         predictions = predict_salary(model, test_features)
 
         for pred in predictions:
-            assert 0 < pred["confidence"] <= 1.0
+            assert 0 < float(pred["confidence"]) <= 1.0
 
 
 class TestModelPersistence:
@@ -103,5 +103,5 @@ class TestModelPersistence:
             loaded_preds = predict_salary(loaded, test_features)
 
         for orig, loaded_p in zip(original_preds, loaded_preds):
-            assert abs(orig["predicted_min"] - loaded_p["predicted_min"]) < 0.01
-            assert abs(orig["predicted_max"] - loaded_p["predicted_max"]) < 0.01
+            assert abs(float(orig["predicted_min"]) - float(loaded_p["predicted_min"])) < 0.01
+            assert abs(float(orig["predicted_max"]) - float(loaded_p["predicted_max"])) < 0.01

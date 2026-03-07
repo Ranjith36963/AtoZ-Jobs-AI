@@ -1,9 +1,9 @@
 """Tests for cross-encoder re-ranker (SPEC.md §6.2, Gates R8-R10)."""
+from typing import Any
 
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 
 class TestGetReranker:
@@ -45,7 +45,7 @@ class TestGetReranker:
 class TestRerank:
     """Re-ranking tests with mocked model."""
 
-    def _make_rerank(self):
+    def _make_rerank(self) -> tuple[Any, MagicMock]:
         """Import rerank with mocked model."""
         import src.search.reranker as mod
         mock_model = MagicMock()

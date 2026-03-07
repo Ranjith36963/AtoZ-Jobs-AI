@@ -1,6 +1,6 @@
 """Tests for dedup orchestrator (PLAYBOOK §2.4)."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 

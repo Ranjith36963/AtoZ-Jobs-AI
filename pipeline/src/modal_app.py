@@ -207,7 +207,7 @@ async def daily_maintenance() -> None:
     secrets=[modal.Secret.from_name("atoz-env")],
     timeout=1800,
 )
-async def seed_esco(csv_path: str = "data/esco_skills.csv") -> dict:
+async def seed_esco(csv_path: str = "data/esco_skills.csv") -> dict[str, object]:
     """One-time ESCO taxonomy load into skills tables."""
     import structlog
 
@@ -228,7 +228,7 @@ async def seed_esco(csv_path: str = "data/esco_skills.csv") -> dict:
     secrets=[modal.Secret.from_name("atoz-env")],
     timeout=3600,
 )
-async def backfill_job_skills(batch_size: int = 500) -> dict:
+async def backfill_job_skills(batch_size: int = 500) -> dict[str, object]:
     """Extract skills from all jobs and populate job_skills table."""
     import structlog
 
@@ -252,7 +252,7 @@ async def backfill_job_skills(batch_size: int = 500) -> dict:
     secrets=[modal.Secret.from_name("atoz-env")],
     timeout=3600,
 )
-async def backfill_dedup(batch_size: int = 1000) -> dict:
+async def backfill_dedup(batch_size: int = 1000) -> dict[str, object]:
     """Run advanced deduplication across all jobs."""
     import structlog
 
@@ -272,7 +272,7 @@ async def backfill_dedup(batch_size: int = 1000) -> dict:
     secrets=[modal.Secret.from_name("atoz-env")],
     timeout=3600,
 )
-async def train_salary() -> dict:
+async def train_salary() -> dict[str, object]:
     """Train XGBoost salary prediction model."""
     import structlog
 
@@ -296,7 +296,7 @@ async def train_salary() -> dict:
     secrets=[modal.Secret.from_name("atoz-env")],
     timeout=3600,
 )
-async def enrich_companies_fn(batch_size: int = 100) -> dict:
+async def enrich_companies_fn(batch_size: int = 100) -> dict[str, object]:
     """Enrich companies with Companies House data."""
     import structlog
 
@@ -317,7 +317,7 @@ async def enrich_companies_fn(batch_size: int = 100) -> dict:
     secrets=[modal.Secret.from_name("atoz-env")],
     timeout=1800,
 )
-async def predict_salaries(batch_size: int = 500) -> dict:
+async def predict_salaries(batch_size: int = 500) -> dict[str, object]:
     """Predict salaries for jobs missing salary data."""
     import structlog
 
@@ -342,9 +342,9 @@ async def predict_salaries(batch_size: int = 500) -> dict:
 @modal.web_endpoint(method="POST")
 async def search_endpoint(
     query: str = "",
-    filters: dict | None = None,
+    filters: dict[str, object] | None = None,
     user_id: str | None = None,
-) -> dict:
+) -> dict[str, object]:
     """Search endpoint: query -> embed -> search_jobs_v2 -> cross-encoder rerank."""
     import structlog
 

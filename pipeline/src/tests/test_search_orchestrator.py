@@ -1,11 +1,12 @@
 """Tests for search orchestrator (SPEC.md §6, Gates R14-R15)."""
+from typing import Any
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 
-def _make_mock_db(search_results: list[dict] | None = None) -> MagicMock:
+def _make_mock_db(search_results: list[dict[str, Any]] | None = None) -> MagicMock:
     """Create a mock DB client with search_jobs_v2 RPC."""
     if search_results is None:
         search_results = [
