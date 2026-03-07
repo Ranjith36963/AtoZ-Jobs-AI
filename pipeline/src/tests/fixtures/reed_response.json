@@ -1,0 +1,49 @@
+{
+  "results": [
+    {
+      "jobId": 12345678,
+      "employerId": 98765,
+      "employerName": "Acme Technologies Ltd",
+      "employerProfileId": null,
+      "employerProfileName": null,
+      "jobTitle": "Senior Python Developer",
+      "locationName": "London, City of London",
+      "minimumSalary": 65000.0,
+      "maximumSalary": 85000.0,
+      "currency": "GBP",
+      "expirationDate": "2026-04-05T00:00:00",
+      "date": "2026-03-05T10:30:00",
+      "jobDescription": "<p>We are looking for a <strong>Senior Python Developer</strong> to join our team.</p><ul><li>Experience with Django and FastAPI</li><li>Knowledge of PostgreSQL</li></ul>",
+      "applications": 5,
+      "jobUrl": "https://www.reed.co.uk/jobs/senior-python-developer/12345678",
+      "partTime": false,
+      "fullTime": true,
+      "contractType": "permanent",
+      "jobCategoryId": 14,
+      "jobCategoryName": "IT & Telecoms"
+    },
+    {
+      "jobId": 12345679,
+      "employerId": 54321,
+      "employerName": "DataCo Solutions",
+      "employerProfileId": null,
+      "employerProfileName": null,
+      "jobTitle": "Data Analyst",
+      "locationName": "Manchester",
+      "minimumSalary": null,
+      "maximumSalary": null,
+      "currency": null,
+      "expirationDate": "2026-04-10T00:00:00",
+      "date": "2026-03-04T14:00:00",
+      "jobDescription": "Entry level data analyst role. No experience needed.",
+      "applications": 12,
+      "jobUrl": "https://www.reed.co.uk/jobs/data-analyst/12345679",
+      "partTime": true,
+      "fullTime": false,
+      "contractType": "contract",
+      "jobCategoryId": 14,
+      "jobCategoryName": "IT & Telecoms"
+    }
+  ],
+  "totalResults": 247
+}

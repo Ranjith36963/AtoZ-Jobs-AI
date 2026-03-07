@@ -1,0 +1,41 @@
+[project]
+name = "atoz-jobs-pipeline"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.12",
+    "google-genai>=1.0",
+    "structlog>=24.0",
+    "numpy>=1.26",
+    "supabase>=2.0",
+    "beautifulsoup4>=4.12",
+    "modal>=0.68",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "hypothesis>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-beautifulsoup4>=4.12",
+    "faker>=33.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["src/tests"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["openai", "openai.*"]
+ignore_missing_imports = true
