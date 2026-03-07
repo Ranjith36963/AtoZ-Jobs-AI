@@ -7,7 +7,7 @@ correct parameter passing, response structure, and graceful degradation.
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
+from typing import Any
 
 def _make_job(
     job_id: int,
@@ -24,7 +24,7 @@ def _make_job(
     category: str = "IT Jobs",
     seniority: str = "Mid",
     rrf_score: float = 0.04,
-) -> dict:
+) -> dict[str, Any]:
     """Create a mock job result."""
     return {
         "id": job_id,
@@ -46,15 +46,11 @@ def _make_job(
         "source_url": f"https://example.com/job/{job_id}",
         "rrf_score": rrf_score,
     }
-
-
-def _make_mock_db(jobs: list[dict] | None = None) -> MagicMock:
+def _make_mock_db(jobs: list[dict[str, Any]] | None = None) -> MagicMock:
     """Create mock DB returning given jobs from search_jobs_v2."""
     mock_db = MagicMock()
     mock_db.rpc.return_value.execute.return_value.data = jobs or []
     return mock_db
-
-
 class TestSearchQualityBasicQueries:
     """Q1-Q3: Basic keyword, semantic, and filter queries."""
 
@@ -75,7 +71,7 @@ class TestSearchQualityBasicQueries:
         ],
     )
     async def test_query_returns_results(
-        self, query: str, filters: dict, expected_min: int
+        self, query: str, filters: dict[str, Any], expected_min: int
     ) -> None:
         """Various queries return non-empty results with correct structure."""
         from src.search.orchestrator import search
@@ -98,8 +94,6 @@ class TestSearchQualityBasicQueries:
         assert all("title" in r for r in result["results"])
         assert all("id" in r for r in result["results"])
         assert result["latency_ms"] >= 0
-
-
 class TestSearchQualityFilters:
     """Q4-Q7: Filter-specific tests."""
 
@@ -134,7 +128,7 @@ class TestSearchQualityFilters:
         mock_embed = AsyncMock(return_value=[0.1] * 768)
 
         with patch("src.search.orchestrator.rerank", side_effect=lambda q, j, **kw: j):
-            result = await search(
+            _result = await search(
                 query="marketing",
                 db_client=mock_db,
                 embed_fn=mock_embed,
@@ -201,8 +195,6 @@ class TestSearchQualityFilters:
 
         params = mock_db.rpc.call_args[0][1]
         assert params["category_filter"] == "Finance"
-
-
 class TestSearchQualityReranking:
     """Q8-Q10: Re-ranking verification."""
 
@@ -247,8 +239,6 @@ class TestSearchQualityReranking:
             )
 
         assert "rerank_score" in result["results"][0]
-
-
 class TestSearchQualityEdgeCases:
     """Q11-Q15: Edge cases and graceful degradation."""
 
@@ -306,7 +296,7 @@ class TestSearchQualityEdgeCases:
         }
 
         with patch("src.search.orchestrator.rerank", side_effect=lambda q, j, **kw: j):
-            result = await search(
+            _result = await search(
                 query="accountant",
                 db_client=mock_db,
                 embed_fn=mock_embed,
@@ -353,7 +343,7 @@ class TestSearchQualityEdgeCases:
         mock_embed = AsyncMock(side_effect=Exception("Gemini down"))
 
         with patch("src.search.orchestrator.rerank", side_effect=lambda q, j, **kw: j):
-            result = await search(
+            _result = await search(
                 query="developer",
                 db_client=mock_db,
                 embed_fn=mock_embed,
@@ -363,8 +353,6 @@ class TestSearchQualityEdgeCases:
         params = mock_db.rpc.call_args[0][1]
         assert params["query_embedding"] is None
         assert params["query_text"] == "developer"
-
-
 class TestSearchQualityResponseStructure:
     """Verify response structure across all query types."""
 
@@ -431,7 +419,7 @@ class TestSearchQualityResponseStructure:
             {"min_salary": 30000, "max_salary": 80000, "category_filter": "Healthcare"},
         ],
     )
-    async def test_filter_combinations(self, filters: dict) -> None:
+    async def test_filter_combinations(self, filters: dict[str, Any]) -> None:
         """All filter combinations produce valid responses."""
         from src.search.orchestrator import search
 

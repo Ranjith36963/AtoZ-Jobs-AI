@@ -3,8 +3,6 @@
 Trains, predicts, saves, and loads salary prediction models.
 """
 
-import json
-from pathlib import Path
 
 import numpy as np
 import structlog
@@ -121,7 +119,7 @@ def predict_salary(
             "confidence": confidence,
         })
 
-    return results
+    return results  # type: ignore[return-value]
 
 
 def save_model(model: xgb.Booster, path: str) -> None:

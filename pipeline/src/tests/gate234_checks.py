@@ -94,7 +94,7 @@ def _insert_job(ext_id: str, status: str = "parsed", **extra: object) -> int:
         json=data,
         timeout=TIMEOUT,
     )
-    return r.status_code
+    return int(r.status_code)
 
 
 def _delete_job(ext_id: str) -> None:

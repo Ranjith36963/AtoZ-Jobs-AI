@@ -1,6 +1,6 @@
 """Tests for Companies House API client (SPEC.md §5.2, Gates P11-P13)."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest

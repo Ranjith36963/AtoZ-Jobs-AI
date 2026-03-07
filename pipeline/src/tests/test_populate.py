@@ -1,6 +1,6 @@
 """Tests for job skills population (SPEC.md §3.3)."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -133,7 +133,7 @@ class TestPopulateJobSkills:
                     mock.limit.return_value = mock
                     mock.execute.return_value = MagicMock(data=[])
                     return mock
-            return original_table(name)
+            return original_table(name)  # type: ignore[no-any-return]
 
         db.table = table_with_empty_second_call
 

@@ -69,3 +69,64 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["sentence_transformers", "sentence_transformers.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["structlog", "structlog.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["httpx", "httpx.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["modal", "modal.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pydantic", "pydantic.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pytest", "pytest.*", "_pytest", "_pytest.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["hypothesis", "hypothesis.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["google", "google.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["bs4", "bs4.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["supabase", "supabase.*", "postgrest", "postgrest.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["faker", "faker.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["src.embeddings.gemini"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["src.tests.*"]
+disallow_untyped_decorators = false
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = ["src.models.job"]
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = ["src.modal_app"]
+disallow_untyped_decorators = false

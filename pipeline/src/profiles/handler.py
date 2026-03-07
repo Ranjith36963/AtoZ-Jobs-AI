@@ -111,4 +111,5 @@ async def get_profile_embedding(
     if not result.data:
         return None
 
-    return result.data[0].get("profile_embedding")
+    embedding: list[float] | None = result.data[0].get("profile_embedding")
+    return embedding

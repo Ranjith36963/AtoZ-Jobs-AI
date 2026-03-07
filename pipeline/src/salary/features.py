@@ -5,7 +5,6 @@ Extracts features from job data for XGBoost salary model training.
 
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.preprocessing import OneHotEncoder
 
 # 12 UK regions for one-hot encoding
 UK_REGIONS = [
@@ -110,14 +109,14 @@ def build_features(
 
     # Skill count
     skill_count_features = np.array([
-        [int(j.get("skill_count", 0) or 0)]
+        [int(j.get("skill_count", 0) or 0)]  # type: ignore[call-overload]
         for j in labeled_jobs
     ])
 
     # Top 50 skills binary presence
     if top_skills:
         skill_features = np.array([
-            [1 if s in (j.get("skills", []) or []) else 0 for s in top_skills]
+            [1 if s in (j.get("skills", []) or []) else 0 for s in top_skills]  # type: ignore[operator]
             for j in labeled_jobs
         ])
     else:

@@ -4,7 +4,6 @@ import numpy as np
 
 from src.salary.features import (
     CATEGORIES,
-    SENIORITY_MAP,
     UK_REGIONS,
     _encode_category,
     _encode_region,
@@ -94,7 +93,7 @@ class TestBuildFeatures:
 
     def test_jobs_without_salary_excluded(self) -> None:
         """Jobs without salary not included in training data."""
-        jobs = [
+        jobs: list[dict[str, object]] = [
             {"title": "Dev", "salary_annual_max": 50000},
             {"title": "Chef", "salary_annual_max": None},
             {"title": "Nurse", "salary_annual_max": 30000},

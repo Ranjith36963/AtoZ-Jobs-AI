@@ -6,7 +6,7 @@ Loads ESCO skills CSV into structured dict for skill dictionary building.
 import csv
 
 
-def load_esco_csv(filepath: str) -> dict[str, dict[str, object]]:
+def load_esco_csv(filepath: str) -> dict[str, dict[str, str | list[str]]]:
     """Load ESCO skills CSV into structured dict.
 
     Args:
@@ -16,7 +16,7 @@ def load_esco_csv(filepath: str) -> dict[str, dict[str, object]]:
         Dict keyed by concept_uri with preferred_label, alt_labels,
         skill_type, and description.
     """
-    skills: dict[str, dict[str, object]] = {}
+    skills: dict[str, dict[str, str | list[str]]] = {}
     with open(filepath) as f:
         for row in csv.DictReader(f):
             uri = row["conceptUri"].strip()
