@@ -1,6 +1,6 @@
 [project]
 name = "atoz-jobs-pipeline"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
@@ -11,6 +11,12 @@ dependencies = [
     "supabase>=2.0",
     "beautifulsoup4>=4.12",
     "modal>=0.68",
+    "spacy>=3.7",
+    "datasketch>=1.6",
+    "xxhash>=3.0",
+    "xgboost>=2.0",
+    "scikit-learn>=1.4",
+    "sentence-transformers>=2.2",
 ]
 
 [project.optional-dependencies]
@@ -38,4 +44,28 @@ strict = true
 
 [[tool.mypy.overrides]]
 module = ["openai", "openai.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["spacy", "spacy.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["datasketch", "datasketch.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["xxhash", "xxhash.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["xgboost", "xgboost.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["sklearn", "sklearn.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["sentence_transformers", "sentence_transformers.*"]
 ignore_missing_imports = true
