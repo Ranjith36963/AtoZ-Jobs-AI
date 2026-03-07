@@ -35,6 +35,16 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["src/tests"]
 
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "src/tests/phase2_gate_checks.py",
+    "src/tests/gate1_checks.py",
+    "src/tests/gate234_checks.py",
+    "src/tests/e2e_pipeline.py",
+    "src/skills/seed_esco.py",
+]
+
 [tool.ruff]
 target-version = "py312"
 
