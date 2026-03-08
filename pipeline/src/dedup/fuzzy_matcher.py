@@ -6,13 +6,18 @@ Implements Stage 2 of the 3-stage dedup architecture:
 - Canonical selection (keep richest version)
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
+if TYPE_CHECKING:
+    from supabase import Client
+
 logger = structlog.get_logger()
 
-# Decision threshold: score >= 0.65 → mark as duplicate
+# Decision threshold: score >= 0.65 -> mark as duplicate
 DUPLICATE_THRESHOLD = 0.65
 
 # pg_trgm similarity thresholds
@@ -74,6 +79,7 @@ def pick_canonical(job_a: dict[str, Any], job_b: dict[str, Any]) -> tuple[int, i
     Returns:
         Tuple of (canonical_id, duplicate_id).
     """
+
     def richness(j: dict[str, Any]) -> int:
         score = 0
         score += 1 if j.get("salary_annual_max") else 0
@@ -89,7 +95,7 @@ def pick_canonical(job_a: dict[str, Any], job_b: dict[str, Any]) -> tuple[int, i
 
 async def find_fuzzy_candidates(
     job_id: int,
-    db_client: Any,
+    db_client: Client,
 ) -> list[dict[str, Any]]:
     """Find fuzzy duplicate candidates for a job using pg_trgm.
 
@@ -100,19 +106,17 @@ async def find_fuzzy_candidates(
     Returns:
         List of candidate dicts with id, title_sim, company_sim, dup_score.
     """
-    # Set pg_trgm threshold
-    db_client.rpc("set_config", {
-        "setting_name": "pg_trgm.similarity_threshold",
-        "new_value": str(TITLE_SIMILARITY_THRESHOLD),
-    }).execute()
-
     # Query for fuzzy candidates using the SQL function
-    result = db_client.rpc("find_fuzzy_duplicates", {
-        "target_job_id": job_id,
-    }).execute()
+    # Threshold is enforced in the SQL function via explicit >= 0.6 check
+    result = db_client.rpc(
+        "find_fuzzy_duplicates",
+        {
+            "target_job_id": job_id,
+        },
+    ).execute()
 
     candidates = []
-    for row in (result.data or []):
+    for row in result.data or []:
         if row.get("dup_score", 0) >= DUPLICATE_THRESHOLD:
             candidates.append(row)
 
@@ -123,7 +127,7 @@ async def mark_duplicate(
     duplicate_id: int,
     canonical_id: int,
     score: float,
-    db_client: Any,
+    db_client: Client,
 ) -> None:
     """Mark a job as a duplicate of another.
 
@@ -133,11 +137,13 @@ async def mark_duplicate(
         score: Composite duplicate score.
         db_client: Supabase client.
     """
-    db_client.table("jobs").update({
-        "is_duplicate": True,
-        "canonical_id": canonical_id,
-        "duplicate_score": score,
-    }).eq("id", duplicate_id).execute()
+    db_client.table("jobs").update(
+        {
+            "is_duplicate": True,
+            "canonical_id": canonical_id,
+            "duplicate_score": score,
+        }
+    ).eq("id", duplicate_id).execute()
 
     logger.info(
         "dedup.marked",
