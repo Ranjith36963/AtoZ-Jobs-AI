@@ -2,6 +2,9 @@
 
 import os
 
+from hypothesis import given, settings
+from hypothesis import strategies as st
+
 from src.skills.dictionary_builder import build_dictionary, build_uk_entries
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -93,3 +96,36 @@ class TestBuildDictionary:
         assert "NMC Registered" in canonical_values
         assert "SIA Licence" in canonical_values
         assert "ACCA" in canonical_values
+
+    def test_uk_entry_count_spec(self) -> None:
+        """SPEC §3.2: ~300 UK-specific entries."""
+        entries = build_uk_entries()
+        assert len(entries) >= 250, f"Expected ~300 UK entries, got {len(entries)}"
+
+    def test_combined_pattern_count(self) -> None:
+        """SPEC §3.2: ~450+ patterns total without ESCO."""
+        d = build_dictionary()
+        assert len(d) >= 400, f"Expected ~450+ patterns, got {len(d)}"
+
+
+class TestPropertyBased:
+    """Hypothesis property-based tests (test-standards.md §4)."""
+
+    @given(key=st.sampled_from(list(build_uk_entries().keys())))
+    @settings(max_examples=100)
+    def test_uk_keys_always_lowercase(self, key: str) -> None:
+        """Every UK dictionary key must be lowercase."""
+        assert key == key.lower()
+
+    @given(key=st.sampled_from(list(build_dictionary().keys())))
+    @settings(max_examples=200)
+    def test_all_keys_lowercase(self, key: str) -> None:
+        """Every combined dictionary key must be lowercase."""
+        assert key == key.lower()
+
+    @given(key=st.sampled_from(list(build_dictionary().keys())))
+    @settings(max_examples=100)
+    def test_values_never_empty(self, key: str) -> None:
+        """Every key maps to a non-empty canonical name."""
+        d = build_dictionary()
+        assert len(d[key]) > 0

@@ -1,6 +1,8 @@
 """Tests for SpaCy PhraseMatcher skill extraction (SPEC.md §3.2, Gates S6-S9)."""
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from src.skills.dictionary_builder import build_dictionary
 from src.skills.spacy_matcher import SpaCySkillMatcher
@@ -30,7 +32,9 @@ class TestSpaCyExtraction:
 
     def test_healthcare(self, matcher: SpaCySkillMatcher) -> None:
         """Gate S8: 'NMC registered nurse with enhanced DBS'."""
-        skills = matcher.extract("NMC registered nurse with enhanced DBS check required")
+        skills = matcher.extract(
+            "NMC registered nurse with enhanced DBS check required"
+        )
         assert "NMC Registered" in skills
         # Either "DBS Check" or "Enhanced DBS" is acceptable
         assert "DBS Check" in skills or "Enhanced DBS" in skills
@@ -51,11 +55,15 @@ class TestSpaCyExtraction:
         assert "SQL" in skills
 
     def test_finance_skills(self, matcher: SpaCySkillMatcher) -> None:
-        skills = matcher.extract("ACCA qualified accountant with experience in Xero and payroll")
+        skills = matcher.extract(
+            "ACCA qualified accountant with experience in Xero and payroll"
+        )
         assert "ACCA" in skills
 
     def test_case_insensitive(self, matcher: SpaCySkillMatcher) -> None:
-        skills = matcher.extract("PYTHON developer with docker and KUBERNETES experience")
+        skills = matcher.extract(
+            "PYTHON developer with docker and KUBERNETES experience"
+        )
         assert "Python" in skills
         assert "Docker" in skills
         assert "Kubernetes" in skills
@@ -98,3 +106,41 @@ class TestSpaCyEdgeCases:
         """Repeated mentions don't create duplicate entries."""
         skills = matcher.extract("Python and more Python and even more Python")
         assert skills.count("Python") == 1
+
+
+class TestPropertyBased:
+    """Hypothesis property-based tests (test-standards.md §4)."""
+
+    @given(text=st.text(min_size=0, max_size=2000))
+    @settings(max_examples=100)
+    def test_extract_never_raises(self, matcher: SpaCySkillMatcher, text: str) -> None:
+        """Matcher must never raise on arbitrary text input."""
+        result = matcher.extract(text)
+        assert isinstance(result, list)
+
+    @given(text=st.text(min_size=0, max_size=500))
+    @settings(max_examples=50)
+    def test_extract_returns_list_of_strings(
+        self, matcher: SpaCySkillMatcher, text: str
+    ) -> None:
+        """Every extracted skill must be a string."""
+        result = matcher.extract(text)
+        for skill in result:
+            assert isinstance(skill, str)
+            assert len(skill) > 0
+
+    @given(text=st.text(min_size=0, max_size=1000))
+    @settings(max_examples=50)
+    def test_extract_respects_max_skills(
+        self, matcher: SpaCySkillMatcher, text: str
+    ) -> None:
+        """Result is always capped at max_skills."""
+        result = matcher.extract(text, max_skills=15)
+        assert len(result) <= 15
+
+    @given(text=st.text(min_size=0, max_size=500))
+    @settings(max_examples=50)
+    def test_extract_no_duplicates(self, matcher: SpaCySkillMatcher, text: str) -> None:
+        """Result never contains duplicate entries."""
+        result = matcher.extract(text)
+        assert len(result) == len(set(result))
