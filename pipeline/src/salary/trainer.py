@@ -3,7 +3,6 @@
 Trains, predicts, saves, and loads salary prediction models.
 """
 
-
 import numpy as np
 import structlog
 import xgboost as xgb
@@ -113,11 +112,13 @@ def predict_salary(
         else:
             confidence = 0.4  # LOW
 
-        results.append({
-            "predicted_min": predicted_min,
-            "predicted_max": predicted_max,
-            "confidence": confidence,
-        })
+        results.append(
+            {
+                "predicted_min": predicted_min,
+                "predicted_max": predicted_max,
+                "confidence": confidence,
+            }
+        )
 
     return results  # type: ignore[return-value]
 

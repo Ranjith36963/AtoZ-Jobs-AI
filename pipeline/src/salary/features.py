@@ -8,22 +8,48 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 # 12 UK regions for one-hot encoding
 UK_REGIONS = [
-    "East Midlands", "East of England", "London", "North East",
-    "North West", "Northern Ireland", "Scotland", "South East",
-    "South West", "Wales", "West Midlands", "Yorkshire and the Humber",
+    "East Midlands",
+    "East of England",
+    "London",
+    "North East",
+    "North West",
+    "Northern Ireland",
+    "Scotland",
+    "South East",
+    "South West",
+    "Wales",
+    "West Midlands",
+    "Yorkshire and the Humber",
 ]
 
 # Seniority ordinal mapping
 SENIORITY_MAP = {
-    "Junior": 1, "Mid": 2, "Senior": 3, "Lead": 4, "Executive": 5,
+    "Junior": 1,
+    "Mid": 2,
+    "Senior": 3,
+    "Lead": 4,
+    "Executive": 5,
 }
 
 # Internal categories for one-hot
 CATEGORIES = [
-    "Technology", "Finance", "Healthcare", "Education", "Construction",
-    "Retail", "Hospitality", "Manufacturing", "Logistics & Transport",
-    "Energy & Utilities", "Creative & Media", "Professional Services",
-    "Public Sector", "Agriculture", "Property", "Administration", "Other",
+    "Technology",
+    "Finance",
+    "Healthcare",
+    "Education",
+    "Construction",
+    "Retail",
+    "Hospitality",
+    "Manufacturing",
+    "Logistics & Transport",
+    "Energy & Utilities",
+    "Creative & Media",
+    "Professional Services",
+    "Public Sector",
+    "Agriculture",
+    "Property",
+    "Administration",
+    "Other",
 ]
 
 
@@ -73,7 +99,8 @@ def build_features(
     """
     # Filter to jobs with real salary data
     labeled_jobs = [
-        j for j in jobs
+        j
+        for j in jobs
         if j.get("salary_annual_max") is not None
         and not j.get("salary_is_predicted", False)
     ]
@@ -90,46 +117,55 @@ def build_features(
     tfidf_matrix = tfidf.fit_transform(titles).toarray()
 
     # Region one-hot
-    region_features = np.array([
-        _encode_region(str(j.get("location_region", "")) or None)
-        for j in labeled_jobs
-    ])
+    region_features = np.array(
+        [
+            _encode_region(str(j.get("location_region", "")) or None)
+            for j in labeled_jobs
+        ]
+    )
 
     # Category one-hot
-    category_features = np.array([
-        _encode_category(str(j.get("category", "")) or None)
-        for j in labeled_jobs
-    ])
+    category_features = np.array(
+        [_encode_category(str(j.get("category", "")) or None) for j in labeled_jobs]
+    )
 
     # Seniority ordinal
-    seniority_features = np.array([
-        [_encode_seniority(str(j.get("seniority_level", "")) or None)]
-        for j in labeled_jobs
-    ])
+    seniority_features = np.array(
+        [
+            [_encode_seniority(str(j.get("seniority_level", "")) or None)]
+            for j in labeled_jobs
+        ]
+    )
 
     # Skill count
-    skill_count_features = np.array([
-        [int(j.get("skill_count", 0) or 0)]  # type: ignore[call-overload]
-        for j in labeled_jobs
-    ])
+    skill_count_features = np.array(
+        [
+            [int(j.get("skill_count", 0) or 0)]  # type: ignore[call-overload]
+            for j in labeled_jobs
+        ]
+    )
 
     # Top 50 skills binary presence
     if top_skills:
-        skill_features = np.array([
-            [1 if s in (j.get("skills", []) or []) else 0 for s in top_skills]  # type: ignore[operator]
-            for j in labeled_jobs
-        ])
+        skill_features = np.array(
+            [
+                [1 if s in (j.get("skills", []) or []) else 0 for s in top_skills]  # type: ignore[operator]
+                for j in labeled_jobs
+            ]
+        )
     else:
         skill_features = np.zeros((len(labeled_jobs), 0))
 
     # Concatenate all features
-    feature_matrix = np.hstack([
-        tfidf_matrix,
-        region_features,
-        category_features,
-        seniority_features,
-        skill_count_features,
-        skill_features,
-    ])
+    feature_matrix = np.hstack(
+        [
+            tfidf_matrix,
+            region_features,
+            category_features,
+            seniority_features,
+            skill_count_features,
+            skill_features,
+        ]
+    )
 
     return feature_matrix, labels

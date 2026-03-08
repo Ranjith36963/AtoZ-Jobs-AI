@@ -4,8 +4,11 @@ Free API for UK company data: search, profiles, SIC codes.
 Rate limit: 600 requests per 5 minutes = 2 req/sec sustained.
 """
 
-import asyncio
+from __future__ import annotations
+
 from typing import Any
+
+import asyncio
 
 import httpx
 import structlog
@@ -14,13 +17,28 @@ logger = structlog.get_logger()
 
 COMPANIES_HOUSE_BASE = "https://api.company-information.service.gov.uk"
 
-# SIC code 2-digit prefix → section letter (A-U) mapping
+# SIC code 2-digit prefix -> section letter (A-U) mapping
 _SIC_RANGES: list[tuple[int, int, str]] = [
-    (1, 3, "A"), (5, 9, "B"), (10, 33, "C"), (35, 35, "D"),
-    (36, 39, "E"), (41, 43, "F"), (45, 47, "G"), (49, 53, "H"),
-    (55, 56, "I"), (58, 63, "J"), (64, 66, "K"), (68, 68, "L"),
-    (69, 75, "M"), (77, 82, "N"), (84, 84, "O"), (85, 85, "P"),
-    (86, 88, "Q"), (90, 93, "R"), (94, 96, "S"), (97, 98, "T"),
+    (1, 3, "A"),
+    (5, 9, "B"),
+    (10, 33, "C"),
+    (35, 35, "D"),
+    (36, 39, "E"),
+    (41, 43, "F"),
+    (45, 47, "G"),
+    (49, 53, "H"),
+    (55, 56, "I"),
+    (58, 63, "J"),
+    (64, 66, "K"),
+    (68, 68, "L"),
+    (69, 75, "M"),
+    (77, 82, "N"),
+    (84, 84, "O"),
+    (85, 85, "P"),
+    (86, 88, "Q"),
+    (90, 93, "R"),
+    (94, 96, "S"),
+    (97, 98, "T"),
     (99, 99, "U"),
 ]
 
@@ -79,7 +97,9 @@ async def search_company(
 
                 if resp.status_code == 429:
                     retry_after = int(resp.headers.get("Retry-After", "60"))
-                    logger.warning("companies_house.rate_limit", retry_after=retry_after)
+                    logger.warning(
+                        "companies_house.rate_limit", retry_after=retry_after
+                    )
                     await asyncio.sleep(retry_after)
                     continue
 
@@ -94,7 +114,7 @@ async def search_company(
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code >= 500 and attempt < 2:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
                 raise
 

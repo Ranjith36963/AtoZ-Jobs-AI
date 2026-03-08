@@ -3,17 +3,22 @@
 Seeds esco_skills table and skills table from ESCO CSV + dictionary builder.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import structlog
 
 from src.skills.dictionary_builder import build_dictionary
 from src.skills.esco_loader import load_esco_csv
 
+if TYPE_CHECKING:
+    from supabase import Client
+
 logger = structlog.get_logger()
 
 
-async def seed_esco_skills(csv_path: str, db_client: Any) -> int:
+async def seed_esco_skills(csv_path: str, db_client: Client) -> int:
     """Bulk insert ESCO skills into esco_skills table.
 
     Args:
@@ -27,13 +32,15 @@ async def seed_esco_skills(csv_path: str, db_client: Any) -> int:
     rows = []
 
     for uri, skill_data in esco_data.items():
-        rows.append({
-            "concept_uri": uri,
-            "preferred_label": skill_data["preferred_label"],
-            "alt_labels": skill_data.get("alt_labels", []),
-            "skill_type": skill_data.get("skill_type", ""),
-            "description": skill_data.get("description", ""),
-        })
+        rows.append(
+            {
+                "concept_uri": uri,
+                "preferred_label": skill_data["preferred_label"],
+                "alt_labels": skill_data.get("alt_labels", []),
+                "skill_type": skill_data.get("skill_type", ""),
+                "description": skill_data.get("description", ""),
+            }
+        )
 
     # Batch insert in chunks of 1000
     batch_size = 1000
@@ -50,7 +57,7 @@ async def seed_esco_skills(csv_path: str, db_client: Any) -> int:
 
 
 async def seed_skills_table(
-    db_client: Any,
+    db_client: Client,
     esco_csv_path: str | None = None,
 ) -> int:
     """Seed skills table with canonical skills from all sources.
@@ -73,9 +80,7 @@ async def seed_skills_table(
 
     for i in range(0, len(rows), batch_size):
         batch = rows[i : i + batch_size]
-        db_client.table("skills").upsert(
-            batch, on_conflict="name"
-        ).execute()
+        db_client.table("skills").upsert(batch, on_conflict="name").execute()
         total += len(batch)
         logger.info("seed_skills.progress", upserted=total, total=len(rows))
 

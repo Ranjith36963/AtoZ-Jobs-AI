@@ -5,7 +5,9 @@ Stage 2: pg_trgm fuzzy matching
 Stage 3: MinHash/LSH near-duplicate detection
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -18,11 +20,14 @@ from src.dedup.fuzzy_matcher import (
 )
 from src.dedup.minhash import build_lsh_index, compute_minhash, find_lsh_candidates
 
+if TYPE_CHECKING:
+    from supabase import Client
+
 logger = structlog.get_logger()
 
 
 async def run_advanced_dedup(
-    db_client: Any,
+    db_client: Client,
     batch_size: int = 1000,
     use_minhash: bool = True,
 ) -> dict[str, int]:
@@ -51,7 +56,9 @@ async def run_advanced_dedup(
     # Fetch all ready, non-duplicate jobs
     result = (
         db_client.table("jobs")
-        .select("id, title, company_name, description_plain, salary_annual_max, location_city, embedding, date_posted")
+        .select(
+            "id, title, company_name, description_plain, salary_annual_max, location_city, embedding, date_posted"
+        )
         .eq("status", "ready")
         .eq("is_duplicate", False)
         .limit(batch_size)
@@ -122,7 +129,9 @@ async def run_advanced_dedup(
 
                     if score >= DUPLICATE_THRESHOLD:
                         canonical_id, duplicate_id = pick_canonical(job, cand_job)
-                        await mark_duplicate(duplicate_id, canonical_id, score, db_client)
+                        await mark_duplicate(
+                            duplicate_id, canonical_id, score, db_client
+                        )
                         stats["duplicates_marked"] += 1
 
         except Exception as e:

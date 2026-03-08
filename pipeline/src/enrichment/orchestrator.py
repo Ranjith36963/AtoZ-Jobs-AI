@@ -4,10 +4,13 @@ Combines company enrichment via Companies House API with XGBoost salary
 prediction for jobs missing salary data.
 """
 
+from __future__ import annotations
+
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
+import xgboost as xgb
 
 from src.enrichment.companies_house import (
     get_company_profile,
@@ -17,14 +20,17 @@ from src.enrichment.companies_house import (
 from src.salary.features import build_features
 from src.salary.trainer import predict_salary
 
+if TYPE_CHECKING:
+    from supabase import Client
+
 logger = structlog.get_logger()
 
-# Rate limit: 600 req/5min = 2 req/sec → sleep 0.5s between requests
+# Rate limit: 600 req/5min = 2 req/sec -> sleep 0.5s between requests
 RATE_LIMIT_DELAY = 0.5
 
 
 async def enrich_companies(
-    db_client: Any,
+    db_client: Client,
     api_key: str,
     batch_size: int = 100,
 ) -> dict[str, int]:
@@ -57,9 +63,7 @@ async def enrich_companies(
 
     for company in companies:
         try:
-            search_result = await search_company(
-                company["name"], api_key
-            )
+            search_result = await search_company(company["name"], api_key)
 
             if search_result is None:
                 stats["skipped"] += 1
@@ -111,8 +115,8 @@ async def enrich_companies(
 
 
 async def predict_missing_salaries(
-    db_client: Any,
-    model: Any,
+    db_client: Client,
+    model: xgb.Booster,
     model_version: str = "v1.0",
     batch_size: int = 500,
 ) -> dict[str, int]:
@@ -152,12 +156,14 @@ async def predict_missing_salaries(
 
         for job, prediction in zip(jobs, predictions):
             try:
-                db_client.table("jobs").update({
-                    "salary_predicted_min": prediction["predicted_min"],
-                    "salary_predicted_max": prediction["predicted_max"],
-                    "salary_confidence": prediction["confidence"],
-                    "salary_model_version": model_version,
-                }).eq("id", job["id"]).execute()
+                db_client.table("jobs").update(
+                    {
+                        "salary_predicted_min": prediction["predicted_min"],
+                        "salary_predicted_max": prediction["predicted_max"],
+                        "salary_confidence": prediction["confidence"],
+                        "salary_model_version": model_version,
+                    }
+                ).eq("id", job["id"]).execute()
 
                 stats["predicted"] += 1
             except Exception:
