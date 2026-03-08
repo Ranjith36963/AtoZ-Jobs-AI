@@ -61,11 +61,13 @@ class TestSearchCompany:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "items": [{
-                "company_number": "00000001",
-                "title": "GOLDMAN SACHS INTERNATIONAL",
-                "company_status": "active",
-            }]
+            "items": [
+                {
+                    "company_number": "00000001",
+                    "title": "GOLDMAN SACHS INTERNATIONAL",
+                    "company_status": "active",
+                }
+            ]
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -90,7 +92,9 @@ class TestSearchCompany:
         mock_client.get = AsyncMock(return_value=mock_response)
         mock_client.aclose = AsyncMock()
 
-        result = await search_company("NonexistentCompany12345", "test_key", client=mock_client)
+        result = await search_company(
+            "NonexistentCompany12345", "test_key", client=mock_client
+        )
         assert result is None
 
     @pytest.mark.asyncio

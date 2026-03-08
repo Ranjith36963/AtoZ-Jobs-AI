@@ -1,4 +1,5 @@
 """Tests for search orchestrator (SPEC.md §6, Gates R14-R15)."""
+
 from typing import Any
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -102,7 +103,9 @@ class TestSearchOrchestrator:
         mock_embed = AsyncMock(return_value=[0.1] * 768)
 
         with patch("src.search.orchestrator.rerank") as mock_rerank:
-            mock_rerank.return_value = mock_db.rpc.return_value.execute.return_value.data[:20]
+            mock_rerank.return_value = (
+                mock_db.rpc.return_value.execute.return_value.data[:20]
+            )
 
             await search(
                 query="developer",
@@ -168,7 +171,9 @@ class TestSearchOrchestrator:
         mock_embed = AsyncMock(side_effect=Exception("Gemini API down"))
 
         with patch("src.search.orchestrator.rerank") as mock_rerank:
-            mock_rerank.return_value = mock_db.rpc.return_value.execute.return_value.data[:20]
+            mock_rerank.return_value = (
+                mock_db.rpc.return_value.execute.return_value.data[:20]
+            )
 
             result = await search(
                 query="developer",

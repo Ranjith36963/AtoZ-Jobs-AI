@@ -23,8 +23,14 @@ class TestEscoLoader:
 
     def test_preferred_label_extracted(self) -> None:
         skills = load_esco_csv(SAMPLE_CSV)
-        assert skills["http://data.europa.eu/esco/skill/001"]["preferred_label"] == "Python"
-        assert skills["http://data.europa.eu/esco/skill/004"]["preferred_label"] == "JavaScript"
+        assert (
+            skills["http://data.europa.eu/esco/skill/001"]["preferred_label"]
+            == "Python"
+        )
+        assert (
+            skills["http://data.europa.eu/esco/skill/004"]["preferred_label"]
+            == "JavaScript"
+        )
 
     def test_alt_labels_split_by_newline(self) -> None:
         skills = load_esco_csv(SAMPLE_CSV)
@@ -43,8 +49,13 @@ class TestEscoLoader:
 
     def test_skill_type_extracted(self) -> None:
         skills = load_esco_csv(SAMPLE_CSV)
-        assert skills["http://data.europa.eu/esco/skill/001"]["skill_type"] == "skill/competence"
-        assert skills["http://data.europa.eu/esco/skill/003"]["skill_type"] == "knowledge"
+        assert (
+            skills["http://data.europa.eu/esco/skill/001"]["skill_type"]
+            == "skill/competence"
+        )
+        assert (
+            skills["http://data.europa.eu/esco/skill/003"]["skill_type"] == "knowledge"
+        )
 
     def test_description_extracted(self) -> None:
         skills = load_esco_csv(SAMPLE_CSV)

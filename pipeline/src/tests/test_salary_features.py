@@ -68,12 +68,22 @@ class TestBuildFeatures:
     def test_basic_feature_extraction(self) -> None:
         """Gate P5: Features extracted, matrix shape correct."""
         jobs = [
-            {"title": "Python Developer", "salary_annual_max": 50000,
-             "location_region": "London", "category": "Technology",
-             "seniority_level": "Senior", "skill_count": 5},
-            {"title": "Data Analyst", "salary_annual_max": 35000,
-             "location_region": "North West", "category": "Finance",
-             "seniority_level": "Mid", "skill_count": 3},
+            {
+                "title": "Python Developer",
+                "salary_annual_max": 50000,
+                "location_region": "London",
+                "category": "Technology",
+                "seniority_level": "Senior",
+                "skill_count": 5,
+            },
+            {
+                "title": "Data Analyst",
+                "salary_annual_max": 35000,
+                "location_region": "North West",
+                "category": "Finance",
+                "seniority_level": "Mid",
+                "skill_count": 3,
+            },
         ]
         features, labels = build_features(jobs)
         assert features.shape[0] == 2
@@ -114,9 +124,14 @@ class TestBuildFeatures:
     def test_no_nan_in_features(self) -> None:
         """No NaN values in feature matrix."""
         jobs = [
-            {"title": "Developer", "salary_annual_max": 50000,
-             "location_region": None, "category": None,
-             "seniority_level": None, "skill_count": None},
+            {
+                "title": "Developer",
+                "salary_annual_max": 50000,
+                "location_region": None,
+                "category": None,
+                "seniority_level": None,
+                "skill_count": None,
+            },
         ]
         features, labels = build_features(jobs)
         assert not np.isnan(features).any()

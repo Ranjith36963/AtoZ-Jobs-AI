@@ -16,13 +16,15 @@ class TestBuildProfileText:
 
     def test_full_profile(self) -> None:
         """All fields present → correctly formatted."""
-        text = build_profile_text({
-            "target_role": "Software Engineer",
-            "skills": ["Python", "AWS", "Docker"],
-            "experience_text": "5 years in backend development",
-            "preferred_location": "London",
-            "work_preference": "hybrid",
-        })
+        text = build_profile_text(
+            {
+                "target_role": "Software Engineer",
+                "skills": ["Python", "AWS", "Docker"],
+                "experience_text": "5 years in backend development",
+                "preferred_location": "London",
+                "work_preference": "hybrid",
+            }
+        )
 
         assert "Target Role: Software Engineer" in text
         assert "Skills: Python, AWS, Docker" in text
@@ -57,7 +59,9 @@ class TestCreateOrUpdateProfile:
     async def test_creates_profile(self) -> None:
         """Creates profile with embedding."""
         mock_db = MagicMock()
-        mock_db.table.return_value.upsert.return_value.execute.return_value = MagicMock()
+        mock_db.table.return_value.upsert.return_value.execute.return_value = (
+            MagicMock()
+        )
 
         mock_embed = AsyncMock(return_value=[0.1] * 768)
 
@@ -89,7 +93,9 @@ class TestCreateOrUpdateProfile:
     async def test_embedding_dimension(self) -> None:
         """Gate R12: Profile embedding is 768 dimensions."""
         mock_db = MagicMock()
-        mock_db.table.return_value.upsert.return_value.execute.return_value = MagicMock()
+        mock_db.table.return_value.upsert.return_value.execute.return_value = (
+            MagicMock()
+        )
 
         embedding_768 = [0.01 * i for i in range(768)]
         mock_embed = AsyncMock(return_value=embedding_768)
@@ -107,7 +113,9 @@ class TestCreateOrUpdateProfile:
     async def test_update_produces_new_embedding(self) -> None:
         """Re-embedding on update produces new vector."""
         mock_db = MagicMock()
-        mock_db.table.return_value.upsert.return_value.execute.return_value = MagicMock()
+        mock_db.table.return_value.upsert.return_value.execute.return_value = (
+            MagicMock()
+        )
 
         call_count = 0
 
@@ -136,7 +144,9 @@ class TestCreateOrUpdateProfile:
     async def test_missing_optional_fields(self) -> None:
         """Missing optional fields handled without error."""
         mock_db = MagicMock()
-        mock_db.table.return_value.upsert.return_value.execute.return_value = MagicMock()
+        mock_db.table.return_value.upsert.return_value.execute.return_value = (
+            MagicMock()
+        )
         mock_embed = AsyncMock(return_value=[0.0] * 768)
 
         result = await create_or_update_profile(

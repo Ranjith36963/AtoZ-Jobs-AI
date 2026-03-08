@@ -134,10 +134,19 @@ def check_c8() -> None:
     rows = r_count.json()
     _delete_job(ext_id)
 
-    if s1 == 201 and s2 == 409 and len(rows) == 1 and rows[0]["title"] == "Updated Title via UPSERT":
+    if (
+        s1 == 201
+        and s2 == 409
+        and len(rows) == 1
+        and rows[0]["title"] == "Updated Title via UPSERT"
+    ):
         record("C8", True, "Insert 201, duplicate 409, PATCH updates in-place, 1 row")
     else:
-        record("C8", False, f"Insert:{s1}, dup:{s2}, patch:{r_patch.status_code}, rows:{len(rows)}")
+        record(
+            "C8",
+            False,
+            f"Insert:{s1}, dup:{s2}, patch:{r_patch.status_code}, rows:{len(rows)}",
+        )
 
 
 def check_c13() -> None:
@@ -151,7 +160,9 @@ def check_c13() -> None:
     if rows:
         val = rows[0].get("jobs_ingested_last_hour", 0)
         # On empty DB this will be 0, which is expected before first collection run
-        record("C13", True, f"jobs_ingested_last_hour = {val} (0 expected pre-collection)")
+        record(
+            "C13", True, f"jobs_ingested_last_hour = {val} (0 expected pre-collection)"
+        )
     else:
         record("C13", False, "pipeline_health returned no rows")
 
@@ -184,8 +195,16 @@ def check_p19() -> None:
     rows = r_check.json()
     _delete_job(ext_id)
 
-    if rows and rows[0]["title"] == "Changed Title P19" and rows[0]["status"] == "parsed":
-        record("P19", True, "UPSERT updates title, status resets to 'parsed' for reprocessing")
+    if (
+        rows
+        and rows[0]["title"] == "Changed Title P19"
+        and rows[0]["status"] == "parsed"
+    ):
+        record(
+            "P19",
+            True,
+            "UPSERT updates title, status resets to 'parsed' for reprocessing",
+        )
     else:
         record("P19", False, f"Unexpected: {rows}")
 
@@ -213,18 +232,29 @@ def check_p24() -> None:
 def check_m10() -> None:
     """M10: search_jobs() — call via RPC, verify no SQL errors."""
     queries = [
-        ("Q1: keyword+geo", {"query_text": "Python developer", "search_lat": 51.5074, "search_lng": -0.1278, "radius_miles": 25}),
+        (
+            "Q1: keyword+geo",
+            {
+                "query_text": "Python developer",
+                "search_lat": 51.5074,
+                "search_lng": -0.1278,
+                "radius_miles": 25,
+            },
+        ),
         ("Q4: FTS only", {"query_text": "solicitor"}),
         ("Q7: empty search", {}),
         ("Q8: keyword no geo", {"query_text": "chef"}),
-        ("Q10: all filters", {
-            "query_text": "accountant",
-            "search_lat": 55.9533,
-            "search_lng": -3.1883,
-            "radius_miles": 50,
-            "min_salary": 50000,
-            "include_remote": False,
-        }),
+        (
+            "Q10: all filters",
+            {
+                "query_text": "accountant",
+                "search_lat": 55.9533,
+                "search_lng": -3.1883,
+                "radius_miles": 50,
+                "min_salary": 50000,
+                "include_remote": False,
+            },
+        ),
     ]
 
     failures: list[str] = []
