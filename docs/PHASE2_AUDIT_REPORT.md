@@ -505,7 +505,7 @@ All 9 SLAs are **NOT-VERIFIABLE** without live infrastructure, but code architec
 | ID | Severity | Finding | Reference | Recommendation |
 |---|---|---|---|---|
 | P1 | LOW | `search_jobs_v2` computes `salary_is_predicted` inline instead of reading the stored column | SPEC §2.4 | Acceptable deviation — dynamic computation avoids stale data. Document the rationale |
-| P2 | LOW | `features.py` TF-IDF doesn't set `max_features=500` per SPEC §5.1 | SPEC §5.1 | Add `max_features=500` to TfidfVectorizer constructor |
+| ~~P2~~ | ~~LOW~~ | ~~`features.py` TF-IDF doesn't set `max_features=500`~~ | ~~SPEC §5.1~~ | FALSE POSITIVE — `build_features()` does pass `max_tfidf_features=500` to `TfidfVectorizer(max_features=max_tfidf_features)` |
 | P3 | LOW | Confidence values are fixed (0.85/0.65/0.4) rather than computed ranges per SPEC (>0.8, 0.5-0.8, <0.5) | SPEC §5.1 | Acceptable simplification. Document |
 
 ### Observations (Non-Blocking)
@@ -565,8 +565,7 @@ All 9 SLAs are **NOT-VERIFIABLE** without live infrastructure, but code architec
 1. **Fix F1:** Add tests for `dedup/orchestrator.py` core loops to reach ≥85% coverage
 
 ### Priority 2 (Should fix before production)
-2. **Fix P2:** Add `max_features=500` to TfidfVectorizer in `features.py`
-3. Run `supabase db reset` to verify full migration chain (G1)
+2. Run `supabase db reset` to verify full migration chain (G1)
 4. Deploy to Modal staging and run all 7 Phase 2 functions (G14-G23)
 
 ### Priority 3 (Post-deployment)
