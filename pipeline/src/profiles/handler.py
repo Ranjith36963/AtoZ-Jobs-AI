@@ -4,11 +4,19 @@ Builds profile text from user data, embeds via Gemini, and manages
 profile storage in the user_profiles table.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
+if TYPE_CHECKING:
+    from supabase import Client
+
 logger = structlog.get_logger()
+
+EmbedFn = Callable[[str], Awaitable[list[float]]]
 
 PROFILE_TEMPLATE = """Target Role: {target_role}
 Skills: {skills}
@@ -41,8 +49,8 @@ def build_profile_text(profile_data: dict[str, Any]) -> str:
 async def create_or_update_profile(
     user_id: str,
     profile_data: dict[str, Any],
-    db_client: Any,
-    embed_fn: Any = None,
+    db_client: Client,
+    embed_fn: EmbedFn | None = None,
 ) -> dict[str, Any]:
     """Create or update user profile with embedding.
 
@@ -50,7 +58,7 @@ async def create_or_update_profile(
         user_id: UUID of authenticated user.
         profile_data: Profile fields dict.
         db_client: Supabase client.
-        embed_fn: Async function to embed text → list[float]. If None, uses Gemini.
+        embed_fn: Async function to embed text -> list[float]. If None, uses Gemini.
 
     Returns:
         Profile dict with all fields.
@@ -58,13 +66,17 @@ async def create_or_update_profile(
     profile_text = build_profile_text(profile_data)
 
     if embed_fn is None:
-        from src.embeddings.gemini import embed_text
+        from src.embeddings.embed import embed_all
 
-        embed_fn = embed_text
+        async def _embed_single(text: str) -> list[float]:
+            results = await embed_all([text])
+            return results[0] if results else []
+
+        embed_fn = _embed_single
 
     embedding = await embed_fn(profile_text)
 
-    profile = {
+    profile: dict[str, Any] = {
         "id": user_id,
         "target_role": profile_data.get("target_role"),
         "skills": profile_data.get("skills", []),
@@ -90,7 +102,7 @@ async def create_or_update_profile(
 
 async def get_profile_embedding(
     user_id: str,
-    db_client: Any,
+    db_client: Client,
 ) -> list[float] | None:
     """Get profile embedding for search personalization.
 
