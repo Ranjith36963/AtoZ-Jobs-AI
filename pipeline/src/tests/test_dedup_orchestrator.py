@@ -15,7 +15,7 @@ from src.dedup.orchestrator import _simple_similarity, run_advanced_dedup
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_db_mock(jobs: list[dict]) -> MagicMock:
+def _make_db_mock(jobs: list[dict[str, object]]) -> MagicMock:
     """Create a mock Supabase client returning the given jobs."""
     db = MagicMock()
     chain = MagicMock()
@@ -36,7 +36,7 @@ def _make_job(
     city: str = "London",
     embedding: list[float] | None = None,
     date_posted: str = "2025-01-01",
-) -> dict:
+) -> dict[str, object]:
     return {
         "id": job_id,
         "title": title,
@@ -252,7 +252,7 @@ class TestFuzzyStage:
 
         call_count = 0
 
-        async def side_effect(job_id, client):
+        async def side_effect(job_id: str, client: object) -> list[object]:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -391,7 +391,7 @@ class TestMinHashStage:
                 return_value=MagicMock(),
             ) as mock_mh,
         ):
-            stats = await run_advanced_dedup(db, use_minhash=True)
+            await run_advanced_dedup(db, use_minhash=True)
 
         # compute_minhash should only be called for job_b (non-empty description)
         assert mock_mh.call_count == 1
