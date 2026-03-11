@@ -43,6 +43,7 @@ image = (
         "xgboost>=2.0",
         "scikit-learn>=1.4",
         "sentence-transformers>=2.2",
+        "fastapi[standard]",
     )
     .run_commands(
         "python -m spacy download en_core_web_sm",
@@ -326,7 +327,13 @@ async def daily_maintenance() -> None:
     timeout=1800,
 )
 async def seed_esco(csv_path: str = "data/esco_skills.csv") -> dict[str, Any]:
-    """One-time ESCO taxonomy load into skills tables."""
+    """One-time ESCO taxonomy load into skills tables.
+
+    If the ESCO CSV is not found, seeds from the built-in dictionary only
+    (~450+ UK patterns). The ESCO CSV adds ~13K additional skills.
+    """
+    import os
+
     import structlog
 
     from src.skills.seed_esco import seed_esco_skills, seed_skills_table
@@ -335,8 +342,18 @@ async def seed_esco(csv_path: str = "data/esco_skills.csv") -> dict[str, Any]:
     logger.info("seed_esco.start", csv_path=csv_path)
 
     db_client = _get_db()
-    esco_count = await seed_esco_skills(csv_path, db_client)
-    skills_count = await seed_skills_table(db_client, csv_path)
+
+    # Seed esco_skills table only if CSV exists
+    esco_count = 0
+    effective_csv: str | None = csv_path
+    if os.path.exists(csv_path):
+        esco_count = await seed_esco_skills(csv_path, db_client)
+    else:
+        logger.warning("seed_esco.csv_not_found", path=csv_path)
+        effective_csv = None
+
+    # Seed skills table from dictionary (works with or without CSV)
+    skills_count = await seed_skills_table(db_client, effective_csv)
 
     logger.info(
         "seed_esco.complete", esco_inserted=esco_count, skills_upserted=skills_count
@@ -493,7 +510,7 @@ async def predict_salaries(batch_size: int = 500) -> dict[str, Any]:
     secrets=[modal.Secret.from_name("atoz-env")],
     timeout=30,
 )
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 async def search_endpoint(
     query: str = "",
     filters: dict[str, Any] | None = None,
