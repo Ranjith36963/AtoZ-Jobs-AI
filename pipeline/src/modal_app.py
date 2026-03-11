@@ -48,6 +48,7 @@ image = (
     .run_commands(
         "python -m spacy download en_core_web_sm",
     )
+    .add_local_python_source("src")
 )
 
 
