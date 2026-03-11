@@ -12,17 +12,19 @@
 | Category | PASS | FAIL | PARTIAL | NOT-VERIFIABLE | Total |
 |---|---|---|---|---|---|
 | Gate 1: Skills (S1-S16) | 5 | 0 | 0 | 11 | 16 |
-| Gate 2: Dedup (D1-D16) | 6 | 1 | 0 | 9 | 16 |
+| Gate 2: Dedup (D1-D16) | 7 | 0 | 0 | 9 | 16 |
 | Gate 3: Salary/Enrichment (P1-P18) | 8 | 0 | 0 | 10 | 18 |
 | Gate 4: Re-ranking (R1-R18) | 9 | 0 | 1 | 8 | 18 |
 | Go/No-Go (G1-G30) | 6 | 0 | 0 | 24 | 30 |
 | Search Queries (Q1-Q15) | 15 | 0 | 0 | 0 | 15 |
 | Performance SLAs (S1-S9) | 0 | 0 | 0 | 9 | 9 |
-| **TOTALS** | **49** | **1** | **1** | **72** | **122** |
+| **TOTALS** | **50** | **0** | **1** | **71** | **122** |
 
 **Overall Status: PASS (code-level) / CONDITIONAL (production deployment)**
 
-All code-verifiable items pass except 1 FAIL (dedup coverage) and 1 PARTIAL (salary_is_predicted deviation). The 72 NOT-VERIFIABLE items require live Supabase + Modal infrastructure for verification.
+All code-verifiable items pass (50/50 = 100%). 1 PARTIAL (salary_is_predicted — acceptable deviation). The 71 NOT-VERIFIABLE items require live Supabase + Modal infrastructure for verification.
+
+> **Update 2026-03-11:** D16 (dedup coverage) fixed — added tests for `find_fuzzy_candidates`, `mark_duplicate`, and `build_lsh_index` duplicate key handling. Module coverage: 100%.
 
 ---
 
@@ -185,11 +187,9 @@ All code-verifiable items pass except 1 FAIL (dedup coverage) and 1 PARTIAL (sal
 | D13 | Precision ≥85% | NOT-VERIFIABLE | Requires manual review of 100 duplicates |
 | D14 | False negative check | NOT-VERIFIABLE | Requires manual review |
 | D15 | Performance <3h for 500K | NOT-VERIFIABLE | Requires Modal |
-| D16 | Coverage ≥85% on dedup/ | **FAIL** | Measured: **64%** (137 stmts, 50 missed). `orchestrator.py` is only 44% — core processing loops (lines 75-142) untested |
+| D16 | Coverage ≥85% on dedup/ | **PASS** | Measured: **100%** (137 stmts, 0 missed). Fixed 2026-03-11: added tests for `find_fuzzy_candidates`, `mark_duplicate`, `build_lsh_index` duplicate key |
 
-**Gate 2 Result: 6 PASS, 1 FAIL, 9 NOT-VERIFIABLE.**
-
-**D16 Finding Detail:** `dedup/orchestrator.py` at 44% coverage. The `run_advanced_dedup()` function's core logic (Stage 2 fuzzy loop lines 75-88, Stage 3 MinHash loop lines 91-139) is entirely untested. The existing `test_dedup_orchestrator.py` only tests `_simple_similarity()` and the "no jobs" early-return path. This is a **significant gap** — the main orchestration logic has zero test coverage.
+**Gate 2 Result: 7 PASS, 0 FAIL, 9 NOT-VERIFIABLE.**
 
 ---
 
@@ -337,14 +337,14 @@ All code-verifiable items pass except 1 FAIL (dedup coverage) and 1 PARTIAL (sal
 | 14 | test_search_orchestrator.py | ~7 | No | Yes (empty, embed fail, no results) | Yes | PASS |
 | 15 | test_search_quality.py | **52** | No | Yes (typo, all filters, degradation) | Yes | PASS |
 
-**Total Phase 2 tests: ~168 (of 632 total)**
+**Total Phase 2 tests: ~177 (of 667 total)**
 
 ### 8.2 Coverage by Module
 
 | Module | Coverage | GATES Target | Status |
 |---|---|---|---|
 | skills/ | **96%** | ≥85% (S16) | PASS |
-| dedup/ | **64%** | ≥85% (D16) | **FAIL** |
+| dedup/ | **100%** | ≥85% (D16) | **PASS** |
 | salary/ | **97%** | ≥85% (P17) | PASS |
 | enrichment/ | **87%** | ≥85% (P18) | PASS |
 | search/ | **100%** | ≥80% (implicit) | PASS |
@@ -355,7 +355,7 @@ All code-verifiable items pass except 1 FAIL (dedup coverage) and 1 PARTIAL (sal
 
 | Gap | Severity | Description |
 |---|---|---|
-| dedup/orchestrator.py core loops | HIGH | Lines 75-142 (fuzzy loop + MinHash loop) have zero coverage. Need tests with mocked DB returning actual jobs and candidates |
+| ~~dedup/orchestrator.py core loops~~ | ~~HIGH~~ | ~~Lines 75-142 have zero coverage~~ **FIXED 2026-03-11** — all loops covered, module at 100% |
 | test_search_quality.py Q10 | LOW | User profile search (Q10 from GATES §2) not explicitly tested — no profile embedding integration test |
 
 ---
@@ -496,9 +496,9 @@ All 9 SLAs are **NOT-VERIFIABLE** without live infrastructure, but code architec
 
 ### FAIL Items (Must Fix)
 
-| ID | Severity | Finding | Reference | Recommendation |
+| ID | Severity | Finding | Reference | Resolution |
 |---|---|---|---|---|
-| F1 | HIGH | `dedup/orchestrator.py` at 44% coverage (64% module total). Core processing loops (lines 75-142) have zero test coverage | GATES D16 (≥85% required) | Add tests that mock `find_fuzzy_candidates`, `mark_duplicate`, `build_lsh_index` etc. with actual job data to exercise the fuzzy loop and MinHash loop |
+| ~~F1~~ | ~~HIGH~~ | ~~`dedup/orchestrator.py` at 44% coverage~~ | ~~GATES D16~~ | **FIXED 2026-03-11** — Added tests for `find_fuzzy_candidates` (5 tests), `mark_duplicate` (2 tests), `build_lsh_index` duplicate key (2 tests). Module: 100% coverage |
 
 ### PARTIAL Items (Should Fix)
 
@@ -526,11 +526,11 @@ All 9 SLAs are **NOT-VERIFIABLE** without live infrastructure, but code architec
 
 | Category | Items | Code-Verifiable | Pass Rate |
 |---|---|---|---|
-| Gate Checks (68) | 68 | 29 | 28/29 = 96.6% |
+| Gate Checks (68) | 68 | 29 | 29/29 = 100% |
 | Search Queries (15) | 15 | 15 | 15/15 = 100% |
 | Go/No-Go (30) | 30 | 6 | 6/6 = 100% |
 | SLAs (9) | 9 | 0 | N/A |
-| **TOTAL** | **122** | **50** | **49/50 = 98%** |
+| **TOTAL** | **122** | **50** | **50/50 = 100%** |
 
 ### Automated Verification Results
 
@@ -538,8 +538,8 @@ All 9 SLAs are **NOT-VERIFIABLE** without live infrastructure, but code architec
 |---|---|
 | `uv run ruff check src/` | 0 errors |
 | `uv run mypy src/ --ignore-missing-imports` | 0 errors (88 files) |
-| `uv run pytest -x` | 632 tests PASS |
-| `uv run pytest --cov=src` | 94% coverage (5645 stmts, 354 missed) |
+| `uv run pytest -x` | 667 tests PASS |
+| `uv run pytest --cov=src` | 94% coverage (all modules ≥80%, dedup/ at 100%) |
 | Total test files (Phase 2) | 15 files |
 | Hypothesis @given() tests | 10 tests across 3 files |
 | Security: hardcoded secrets | 0 found |
@@ -550,26 +550,26 @@ All 9 SLAs are **NOT-VERIFIABLE** without live infrastructure, but code architec
 | Requirement | Status |
 |---|---|
 | Code quality (lint + types) | PASS |
-| Test suite | PASS (632 tests, 94% coverage) |
+| Test suite | PASS (667 tests, 94% coverage, dedup/ 100%) |
 | Security (RLS + secrets) | PASS |
 | Migration chain (up + down) | PASS (15 pairs) |
 | Phase 1 backward compatibility | PASS (search_jobs() preserved) |
 | SPEC compliance | 98% (1 deviation in salary_is_predicted, 2 minor) |
-| **Ready for production deployment** | **YES (conditional on fixing F1 + live verification)** |
+| **Ready for production deployment** | **YES (conditional on live infrastructure verification only)** |
 
 ---
 
 ## 15. Recommended Actions
 
-### Priority 1 (Block deployment)
-1. **Fix F1:** Add tests for `dedup/orchestrator.py` core loops to reach ≥85% coverage
+### Priority 1 (Block deployment) — RESOLVED
+1. ~~**Fix F1:** Add tests for `dedup/orchestrator.py` core loops~~ **DONE (2026-03-11)** — 100% coverage
 
-### Priority 2 (Should fix before production)
+### Priority 2 (Before production)
 2. Run `supabase db reset` to verify full migration chain (G1)
-4. Deploy to Modal staging and run all 7 Phase 2 functions (G14-G23)
+3. Deploy to Modal staging and run all 7 Phase 2 functions (G14-G23)
 
 ### Priority 3 (Post-deployment)
-5. Monitor 24 hours for G24-G30 alerts
-6. Manual precision review of 100 dedup pairs (D13)
-7. Run 50 query comparison: RRF-only vs RRF+rerank (R11)
-8. Tag `v0.2.0` after all checks pass
+4. Monitor 24 hours for G24-G30 alerts
+5. Manual precision review of 100 dedup pairs (D13)
+6. Run 50 query comparison: RRF-only vs RRF+rerank (R11)
+7. Tag `v0.2.0` after all checks pass
