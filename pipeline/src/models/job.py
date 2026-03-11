@@ -27,7 +27,7 @@ def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.lower().strip())
 
 
-class JobBase(BaseModel):
+class JobBase(BaseModel):  # type: ignore[misc]
     """Universal job schema for all sources.
 
     Maps to the `jobs` table. Every collector converts its source-specific

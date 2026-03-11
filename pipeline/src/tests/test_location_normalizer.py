@@ -205,9 +205,12 @@ class TestGeocodePostcode:
 
     @pytest.mark.asyncio
     async def test_success(self) -> None:
-        client = _mock_client(200, {
-            "result": [{"result": {"latitude": 51.5014, "longitude": -0.1419}}],
-        })
+        client = _mock_client(
+            200,
+            {
+                "result": [{"result": {"latitude": 51.5014, "longitude": -0.1419}}],
+            },
+        )
         coords = await geocode_postcode("SW1A 1AA", client=client)
         assert coords is not None
         assert coords[0] == pytest.approx(51.5014, abs=0.001)
@@ -252,9 +255,14 @@ class TestGeocodePlace:
 
     @pytest.mark.asyncio
     async def test_success(self) -> None:
-        client = _mock_client(200, {
-            "result": [{"latitude": 53.4808, "longitude": -2.2426, "region": "North West"}],
-        })
+        client = _mock_client(
+            200,
+            {
+                "result": [
+                    {"latitude": 53.4808, "longitude": -2.2426, "region": "North West"}
+                ],
+            },
+        )
         result = await geocode_place("Manchester", client=client)
         assert result is not None
         assert result[0] == pytest.approx(53.4808, abs=0.001)
@@ -296,9 +304,12 @@ class TestNormalizeLocationWithHttp:
     @pytest.mark.asyncio
     async def test_postcode_geocoding(self) -> None:
         """Postcode in text → geocode via postcodes.io."""
-        client = _mock_client(200, {
-            "result": [{"result": {"latitude": 51.5014, "longitude": -0.1419}}],
-        })
+        client = _mock_client(
+            200,
+            {
+                "result": [{"result": {"latitude": 51.5014, "longitude": -0.1419}}],
+            },
+        )
         result = await normalize_location("Office SW1A 1AA", http_client=client)
         assert result.postcode == "SW1A 1AA"
         assert result.latitude == pytest.approx(51.5014, abs=0.001)
@@ -315,9 +326,12 @@ class TestNormalizeLocationWithHttp:
     @pytest.mark.asyncio
     async def test_london_outcode(self) -> None:
         """'London EC2' → outcode lookup via postcodes.io."""
-        client = _mock_client(200, {
-            "result": {"latitude": 51.515, "longitude": -0.082},
-        })
+        client = _mock_client(
+            200,
+            {
+                "result": {"latitude": 51.515, "longitude": -0.082},
+            },
+        )
         result = await normalize_location("London EC2", http_client=client)
         assert result.city == "London"
         assert result.region == "Greater London"
@@ -344,9 +358,14 @@ class TestNormalizeLocationWithHttp:
     @pytest.mark.asyncio
     async def test_city_via_places_api(self) -> None:
         """Unknown city → try postcodes.io places API."""
-        client = _mock_client(200, {
-            "result": [{"latitude": 50.3755, "longitude": -4.1427, "region": "South West"}],
-        })
+        client = _mock_client(
+            200,
+            {
+                "result": [
+                    {"latitude": 50.3755, "longitude": -4.1427, "region": "South West"}
+                ],
+            },
+        )
         # Use get for places endpoint
         result = await normalize_location("Plymouth", http_client=client)
         assert result.latitude == pytest.approx(50.3755, abs=0.01)
@@ -358,7 +377,9 @@ class TestNormalizeLocationWithHttp:
         """Places API returns nothing → fall back to city table."""
         client = _mock_client(200, {"result": []})
         uk_cities = {"plymouth": (50.3755, -4.1427, "South West")}
-        result = await normalize_location("Plymouth", http_client=client, uk_cities=uk_cities)
+        result = await normalize_location(
+            "Plymouth", http_client=client, uk_cities=uk_cities
+        )
         assert result.latitude == pytest.approx(50.3755, abs=0.01)
 
     @pytest.mark.asyncio
@@ -377,7 +398,13 @@ class TestNormalizeLocationWithHttp:
     @pytest.mark.asyncio
     async def test_multiple_regions(self) -> None:
         """Test various UK region strings."""
-        for region in ["North West", "East Midlands", "Scotland", "Wales", "Northern Ireland"]:
+        for region in [
+            "North West",
+            "East Midlands",
+            "Scotland",
+            "Wales",
+            "Northern Ireland",
+        ]:
             result = await normalize_location(region)
             assert result.region == region
             assert result.latitude is None

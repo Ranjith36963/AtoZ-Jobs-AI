@@ -1,0 +1,48 @@
+name: Phase 2 Seed & Backfill
+on: workflow_dispatch
+jobs:
+  seed-and-backfill:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipeline
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/merge-main-search-match-xQtG0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install modal uv
+        working-directory: .
+      - run: uv sync
+
+      - name: Seed ESCO taxonomy
+        run: modal run src/modal_app.py::seed_esco
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
+      - name: Backfill job skills
+        run: modal run src/modal_app.py::backfill_job_skills
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
+      - name: Backfill dedup
+        run: modal run src/modal_app.py::backfill_dedup
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
+      - name: Train salary model
+        run: modal run src/modal_app.py::train_salary
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
+      - name: Predict missing salaries
+        run: modal run src/modal_app.py::predict_salaries
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}

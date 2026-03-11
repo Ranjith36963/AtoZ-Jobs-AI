@@ -3,6 +3,7 @@
 Temporary script for gate check verification. Not production code.
 Usage: cd pipeline && uv run python -m src.tests.e2e_pipeline
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -36,14 +37,19 @@ if os.path.exists(_token_path):
 
 PROJECT_REF = "uskvwcyimfnienizneih"
 MGMT_URL = f"https://api.supabase.com/v1/projects/{PROJECT_REF}/database/query"
-MGMT_HEADERS = {"Authorization": f"Bearer {MGMT_TOKEN}", "Content-Type": "application/json"}
+MGMT_HEADERS = {
+    "Authorization": f"Bearer {MGMT_TOKEN}",
+    "Content-Type": "application/json",
+}
 
 if not JOOBLE_API_KEY or not GOOGLE_API_KEY:
     print("[FATAL] Missing JOOBLE_API_KEY or GOOGLE_API_KEY")
     sys.exit(1)
 
 
-def run_sql(sql: str, retries: int = 3) -> list[dict[str, str | int | float | bool | None]] | None:
+def run_sql(
+    sql: str, retries: int = 3
+) -> list[dict[str, str | int | float | bool | None]] | None:
     for i in range(retries):
         r = httpx.post(MGMT_URL, headers=MGMT_HEADERS, json={"query": sql}, timeout=30)
         if r.status_code in (200, 201):
@@ -84,7 +90,9 @@ async def main() -> None:
                     if not jobs:
                         break
                     all_jobs.extend(jobs)
-                    print(f"  {kw} page {page}: {len(jobs)} jobs (total: {len(all_jobs)})")
+                    print(
+                        f"  {kw} page {page}: {len(jobs)} jobs (total: {len(all_jobs)})"
+                    )
                     await asyncio.sleep(1.0)
                 except Exception as e:
                     print(f"  {kw} page {page}: ERROR {e}")
@@ -122,11 +130,13 @@ async def main() -> None:
         skills_result = extract_skills(f"{title} {description}")
         skill_names = [s[0] for s in skills_result[:15]]
 
-        parts = "|".join([
-            re.sub(r"\s+", " ", title.lower().strip()),
-            re.sub(r"\s+", " ", company.lower().strip()),
-            re.sub(r"\s+", " ", location.lower().strip()),
-        ])
+        parts = "|".join(
+            [
+                re.sub(r"\s+", " ", title.lower().strip()),
+                re.sub(r"\s+", " ", company.lower().strip()),
+                re.sub(r"\s+", " ", location.lower().strip()),
+            ]
+        )
         content_hash = hashlib.sha256(parts.encode("utf-8")).hexdigest()
 
         summary = build_summary(
@@ -140,22 +150,24 @@ async def main() -> None:
 
         date_str = str(j.get("updated", "2026-03-06"))[:10]
 
-        processed.append({
-            "external_id": f"jooble_{ext_id}",
-            "title": title,
-            "company_name": company or "Unknown",
-            "description": description,
-            "source_url": link or f"https://jooble.org/desc/{ext_id}",
-            "location_raw": location,
-            "category": category,
-            "seniority_level": seniority,
-            "salary_raw": salary_raw if salary_raw else None,
-            "salary_annual_min": sal_min,
-            "salary_annual_max": sal_max,
-            "content_hash": content_hash,
-            "summary_text": summary,
-            "date_posted": date_str,
-        })
+        processed.append(
+            {
+                "external_id": f"jooble_{ext_id}",
+                "title": title,
+                "company_name": company or "Unknown",
+                "description": description,
+                "source_url": link or f"https://jooble.org/desc/{ext_id}",
+                "location_raw": location,
+                "category": category,
+                "seniority_level": seniority,
+                "salary_raw": salary_raw if salary_raw else None,
+                "salary_annual_min": sal_min,
+                "salary_annual_max": sal_max,
+                "content_hash": content_hash,
+                "summary_text": summary,
+                "date_posted": date_str,
+            }
+        )
 
     print(f"  Processed: {len(processed)} jobs")
 
@@ -170,21 +182,26 @@ async def main() -> None:
 
     try:
         from src.embeddings.embed import embed_batch
+
         test_vec = await embed_batch(["test"])
         if test_vec and len(test_vec[0]) == 768:
             gemini_worked = True
             print("  Gemini API accessible — using real embeddings")
     except Exception as e:
-        print(f"  Gemini API unavailable ({type(e).__name__}): using deterministic hash vectors")
+        print(
+            f"  Gemini API unavailable ({type(e).__name__}): using deterministic hash vectors"
+        )
         print("  (P16/P17 already verified real Gemini embedding code via pytest)")
 
     if gemini_worked:
         batch_size = 50
         for i in range(0, len(summary_texts), batch_size):
-            batch = summary_texts[i:i + batch_size]
+            batch = summary_texts[i : i + batch_size]
             vecs = await embed_batch(batch)
             all_vecs.extend(vecs)
-            print(f"  Embedded batch {i // batch_size + 1}: {len(batch)} -> {len(vecs)} vectors")
+            print(
+                f"  Embedded batch {i // batch_size + 1}: {len(batch)} -> {len(vecs)} vectors"
+            )
             if i + batch_size < len(summary_texts):
                 await asyncio.sleep(1.0)
     else:
@@ -220,13 +237,13 @@ async def main() -> None:
                           description, description_plain, date_posted, status, content_hash,
                           location_raw, category, seniority_level, salary_raw,
                           salary_annual_min, salary_annual_max, embedding)
-        VALUES ({source_id}, {esc(job['external_id'])}, {esc(job['title'])}, {esc(job['company_name'])},
-                {esc(job['source_url'])}, {esc(job['description'])}, {esc(job['description'])},
-                {esc(job['date_posted'])}, 'ready', {esc(job['content_hash'])},
-                {esc(job['location_raw'])}, {esc(job['category'])}, {esc(job['seniority_level'])},
-                {esc(job['salary_raw'])},
-                {job['salary_annual_min'] if job['salary_annual_min'] else 'NULL'},
-                {job['salary_annual_max'] if job['salary_annual_max'] else 'NULL'},
+        VALUES ({source_id}, {esc(job["external_id"])}, {esc(job["title"])}, {esc(job["company_name"])},
+                {esc(job["source_url"])}, {esc(job["description"])}, {esc(job["description"])},
+                {esc(job["date_posted"])}, 'ready', {esc(job["content_hash"])},
+                {esc(job["location_raw"])}, {esc(job["category"])}, {esc(job["seniority_level"])},
+                {esc(job["salary_raw"])},
+                {job["salary_annual_min"] if job["salary_annual_min"] else "NULL"},
+                {job["salary_annual_max"] if job["salary_annual_max"] else "NULL"},
                 '{vec_str}')
         ON CONFLICT (source_id, external_id)
         DO UPDATE SET embedding = EXCLUDED.embedding, status = 'ready', date_crawled = NOW();
@@ -239,7 +256,9 @@ async def main() -> None:
             failed += 1
 
         if (i + 1) % 20 == 0:
-            print(f"  Progress: {i + 1}/{len(processed)} (inserted={inserted}, failed={failed})")
+            print(
+                f"  Progress: {i + 1}/{len(processed)} (inserted={inserted}, failed={failed})"
+            )
             time.sleep(1)
 
     print(f"\n  Final: inserted={inserted}, failed={failed}")
@@ -247,16 +266,22 @@ async def main() -> None:
     # ── Step 5: Verify ──
     print("\n=== STEP 5: Verification ===")
     time.sleep(2)
-    verify = run_sql("SELECT count(*) as cnt FROM jobs WHERE status = 'ready' AND embedding IS NOT NULL;")
+    verify = run_sql(
+        "SELECT count(*) as cnt FROM jobs WHERE status = 'ready' AND embedding IS NOT NULL;"
+    )
     raw_cnt = verify[0]["cnt"] if verify else 0
     ready_count = int(raw_cnt) if raw_cnt is not None else 0
     print(f"  Jobs at status='ready' with embedding: {ready_count}")
-    print(f"  M11 RESULT: {'PASS' if ready_count >= 50 else 'FAIL'} — {ready_count} ready jobs (target >= 50)")
+    print(
+        f"  M11 RESULT: {'PASS' if ready_count >= 50 else 'FAIL'} — {ready_count} ready jobs (target >= 50)"
+    )
 
     # ── Step 6: search_jobs() returns results ──
     print("\n=== STEP 6: search_jobs() test ===")
     time.sleep(1)
-    search_result = run_sql("SELECT * FROM search_jobs(query_text := 'developer') LIMIT 5;")
+    search_result = run_sql(
+        "SELECT * FROM search_jobs(query_text := 'developer') LIMIT 5;"
+    )
     if search_result and len(search_result) > 0:
         print(f"  search_jobs('developer') returned {len(search_result)} results")
         for row in search_result[:3]:

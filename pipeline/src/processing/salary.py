@@ -60,7 +60,10 @@ _SINGLE_FULL = re.compile(_CURRENCY + r"\s*(" + _NUMBER + r")", re.IGNORECASE)
 
 def _parse_number(s: str) -> float:
     """Parse a number string like '25,000' or '25000.50'."""
-    return float(s.replace(",", ""))
+    cleaned = s.replace(",", "").strip()
+    if not cleaned:
+        raise ValueError(f"Cannot parse empty number from '{s}'")
+    return float(cleaned)
 
 
 def _annualize(value: float, period: str | None) -> float:
@@ -113,6 +116,14 @@ def parse_salary_text(text: str) -> tuple[float | None, float | None]:
     if _DOE.search(text):
         return None, None
 
+    try:
+        return _parse_salary_patterns(text)
+    except (ValueError, OverflowError):
+        return None, None
+
+
+def _parse_salary_patterns(text: str) -> tuple[float | None, float | None]:
+    """Match salary patterns and return (annual_min, annual_max)."""
     # Detect period
     period = _detect_period(text)
 

@@ -1,731 +1,264 @@
-# AtoZ Jobs AI — Phase 1 Specification
+# AtoZ Jobs AI — Phase 2 Specification
 
 **What we build and why. Every line implementation-ready.**
 
 Version: 1.0 · March 2026 · Authority: Doc 11 (Conflict Resolution) supersedes all prior docs.
 
-Monthly budget: **~$31/month** (79% reduction from original $142–150 estimate).
+Phase 2 monthly budget delta: **~$0/month** above Phase 1's $31 baseline (total ~$31/month). All Phase 2 processing is rule-based or uses free APIs.
+
+Phase 1 delivered: jobs table (40+ columns, halfvec(768) embeddings, tsvector), skills + job_skills tables (empty, ready to populate), search_jobs() with RRF, pipeline on Modal, Supabase Pro with RLS, 4 API collectors, ~$31/month.
 
 ---
 
-## 1. Database Schema
+## 1. Phase 2 Overview
 
-### 1.1 Extensions (Migration 001)
+4 stages, 4 weeks (Weeks 5–8), building the intelligence layer on Phase 1's data pipeline.
 
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;      -- pgvector: halfvec(768), HNSW
-CREATE EXTENSION IF NOT EXISTS postgis;     -- PostGIS: geography(POINT, 4326), ST_DWithin
-CREATE EXTENSION IF NOT EXISTS pg_trgm;     -- Trigram: fuzzy text matching, GIN indexes
--- pgmq and pg_cron are pre-installed on Supabase Pro
-```
+| Stage | Week | What | Key deliverable |
+|---|---|---|---|
+| 1: Skills Extraction & Taxonomy | 5 | Populate skills + job_skills tables | SpaCy PhraseMatcher with ESCO + UK-specific entries |
+| 2: Advanced Deduplication | 6 | Fuzzy + composite dedup | pg_trgm fuzzy matching + MinHash/LSH preparation |
+| 3: Salary Prediction & Company Enrichment | 7 | Fill missing salaries, enrich companies | XGBoost model + Companies House integration |
+| 4: Cross-Encoder Re-ranking | 8 | Relevance improvement | ms-marco-MiniLM-L-6-v2 + user profiles |
 
-### 1.2 Tables (Migration 002)
+---
 
-```sql
-CREATE TABLE sources (
-    id          SMALLINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    name        TEXT NOT NULL UNIQUE,
-    api_base_url TEXT,
-    is_active   BOOLEAN DEFAULT true,
-    last_synced_at TIMESTAMPTZ,
-    config      JSONB DEFAULT '{}'
-);
+## 2. Database Migrations
 
-CREATE TABLE companies (
-    id              BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    name            TEXT NOT NULL,
-    normalized_name TEXT NOT NULL UNIQUE,
-    website         TEXT,
-    industry        TEXT,
-    company_size    TEXT,
-    sic_code        TEXT,
-    metadata        JSONB DEFAULT '{}'
-);
-
-CREATE TABLE jobs (
-    id              BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    source_id       SMALLINT NOT NULL REFERENCES sources(id),
-    external_id     TEXT NOT NULL,
-    source_url      TEXT NOT NULL,
-
-    -- Core fields (schema.org/JobPosting aligned)
-    title           TEXT NOT NULL,
-    description     TEXT NOT NULL,
-    description_plain TEXT,
-    company_id      BIGINT REFERENCES companies(id),
-    company_name    TEXT NOT NULL,
-
-    -- Location
-    location_raw    TEXT,
-    location_city   TEXT,
-    location_region TEXT,
-    location_postcode TEXT,
-    location_type   TEXT DEFAULT 'onsite',  -- 'onsite','remote','hybrid','nationwide'
-    location        GEOGRAPHY(POINT, 4326),
-
-    -- Employment
-    employment_type TEXT[],                 -- '{full_time,permanent}'
-    seniority_level TEXT,
-    visa_sponsorship TEXT,                  -- 'yes','no','unknown'
-
-    -- Salary (normalized to annual GBP)
-    salary_min          NUMERIC(12,2),
-    salary_max          NUMERIC(12,2),
-    salary_currency     CHAR(3) DEFAULT 'GBP',
-    salary_period       TEXT DEFAULT 'annual',
-    salary_raw          TEXT,
-    salary_annual_min   NUMERIC(12,2),
-    salary_annual_max   NUMERIC(12,2),
-    salary_is_predicted BOOLEAN DEFAULT FALSE,
-
-    -- Classification
-    category            TEXT,
-    soc_code            TEXT,
-    esco_occupation_uri TEXT,
-
-    -- Dates
-    date_posted     TIMESTAMPTZ NOT NULL,
-    date_expires    TIMESTAMPTZ,
-    date_crawled    TIMESTAMPTZ DEFAULT now(),
-
-    -- Processing state
-    status          TEXT DEFAULT 'raw',
-    -- Valid values: raw, parsed, normalized, geocoded, embedded, ready, expired, archived
-    retry_count     INT DEFAULT 0,
-    last_error      TEXT,
-
-    -- Search infrastructure
-    search_vector   TSVECTOR GENERATED ALWAYS AS (
-        setweight(to_tsvector('english', coalesce(title,'')), 'A') ||
-        setweight(to_tsvector('english', coalesce(company_name,'')), 'B') ||
-        setweight(to_tsvector('english', coalesce(description_plain,'')), 'C')
-    ) STORED,
-    embedding       HALFVEC(768),
-
-    -- Deduplication
-    content_hash    TEXT,
-
-    -- Raw preservation
-    raw_data        JSONB,
-
-    UNIQUE(source_id, external_id)
-);
-
-CREATE TABLE skills (
-    id          INT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    name        TEXT NOT NULL UNIQUE,
-    esco_uri    TEXT,
-    lightcast_id TEXT,
-    skill_type  TEXT,        -- 'hard','soft','knowledge'
-    category    TEXT
-);
-
-CREATE TABLE job_skills (
-    job_id      BIGINT REFERENCES jobs(id) ON DELETE CASCADE,
-    skill_id    INT REFERENCES skills(id),
-    confidence  FLOAT,
-    is_required BOOLEAN DEFAULT true,
-    PRIMARY KEY (job_id, skill_id)
-);
-```
-
-**Design decisions:**
-
-- `content_hash` is computed at ingestion as `SHA-256(lowercase(title) + normalize(company) + normalize(location))` — not a DB-generated column because it needs the raw API data before normalization.
-- `search_vector` is a generated stored column — PostgreSQL maintains it automatically on any INSERT/UPDATE. No trigger needed.
-- `employment_type` uses `TEXT[]` because the vocabulary is small and fixed. Skills use a junction table because they number in thousands and need analytics queries.
-- `raw_data JSONB` preserves original API responses for reprocessing when extraction logic improves.
-
-### 1.3 Indexes (Migration 003)
+### 2.1 Migration 007: Skills Taxonomy Tables (Stage 1)
 
 ```sql
--- Vector search: HNSW with cosine distance
-CREATE INDEX idx_jobs_embedding ON jobs
-    USING hnsw (embedding halfvec_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
--- Query-time: SET LOCAL hnsw.ef_search = 60;
+-- Populate the skills table with ESCO taxonomy data
+-- skills table already exists from Phase 1 Migration 002
+-- This migration adds the ESCO taxonomy reference table and indexes
 
--- Full-text search: GIN on generated tsvector
-CREATE INDEX idx_jobs_search_vector ON jobs USING gin(search_vector);
-
--- Fuzzy text: GIN trigram on title (for dedup + autocomplete)
-CREATE INDEX idx_jobs_title_trgm ON jobs USING gin(title gin_trgm_ops);
-
--- Geospatial: GIST on geography column
-CREATE INDEX idx_jobs_location ON jobs USING gist(location);
-
--- B-tree filters (used in search_jobs pre-filter CTE)
-CREATE INDEX idx_jobs_status ON jobs(status);
-CREATE INDEX idx_jobs_salary ON jobs(salary_annual_max) WHERE salary_annual_max IS NOT NULL;
-CREATE INDEX idx_jobs_category ON jobs(category);
-CREATE INDEX idx_jobs_date_posted ON jobs(date_posted DESC);
-CREATE INDEX idx_jobs_source_external ON jobs(source_id, external_id);
--- Note: UNIQUE constraint already creates this, but explicit for clarity
-
--- Autovacuum tuning (HNSW death spiral prevention)
-ALTER TABLE jobs SET (
-    autovacuum_vacuum_scale_factor = 0.01,
-    autovacuum_vacuum_cost_delay = 2,
-    autovacuum_vacuum_threshold = 100,
-    autovacuum_analyze_scale_factor = 0.005
-);
-```
-
-### 1.4 Queues, Cron, and Health View (Migration 004)
-
-```sql
--- 5 processing queues + 1 dead letter queue = 6 total
-SELECT pgmq.create('parse_queue');
-SELECT pgmq.create('normalize_queue');
-SELECT pgmq.create('dedup_queue');
-SELECT pgmq.create('geocode_queue');
-SELECT pgmq.create('embed_queue');
-SELECT pgmq.create('dead_letter_queue');
-
--- Auto-enqueue new jobs for parsing
-CREATE OR REPLACE FUNCTION enqueue_for_parsing() RETURNS TRIGGER AS $$
-BEGIN
-    PERFORM pgmq.send('parse_queue', jsonb_build_object('job_id', NEW.id));
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER after_job_insert AFTER INSERT ON jobs
-    FOR EACH ROW WHEN (NEW.status = 'raw')
-    EXECUTE FUNCTION enqueue_for_parsing();
-
--- Monthly HNSW reindex (3 AM on 1st of each month)
-SELECT cron.schedule(
-    'reindex-hnsw-monthly',
-    '0 3 1 * *',
-    $$REINDEX INDEX CONCURRENTLY idx_jobs_embedding$$
+CREATE TABLE esco_skills (
+    concept_uri     TEXT PRIMARY KEY,
+    preferred_label TEXT NOT NULL,
+    alt_labels      TEXT[],
+    skill_type      TEXT,           -- 'skill/competence', 'knowledge'
+    description     TEXT,
+    isco_group      TEXT            -- ISCO-08 group code for occupation mapping
 );
 
--- Daily expiry (2 AM)
-SELECT cron.schedule(
-    'expire-stale-jobs',
-    '0 2 * * *',
-    $$
-    UPDATE jobs SET status = 'expired', last_error = 'auto-expired'
-    WHERE status = 'ready'
-      AND date_expires IS NOT NULL
-      AND date_expires < NOW();
+-- Index for text search on skill names (autocomplete + fuzzy match)
+CREATE INDEX idx_esco_skills_label_trgm ON esco_skills USING gin(preferred_label gin_trgm_ops);
 
-    UPDATE jobs SET status = 'expired', last_error = 'default-45d-expired'
-    WHERE status = 'ready'
-      AND date_expires IS NULL
-      AND date_posted < NOW() - INTERVAL '45 days';
+-- Add esco_uri column mapping to skills table (already has esco_uri from Phase 1)
+-- Add additional columns for Phase 2 enrichment
+ALTER TABLE skills ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'esco';
+ALTER TABLE skills ADD COLUMN IF NOT EXISTS aliases TEXT[];
 
-    UPDATE jobs SET status = 'archived'
-    WHERE status = 'expired'
-      AND date_crawled < NOW() - INTERVAL '90 days';
-    $$
-);
-
--- Pipeline health monitoring view
-CREATE VIEW pipeline_health AS
+-- Materialized view: top skills by demand
+CREATE MATERIALIZED VIEW mv_skill_demand AS
 SELECT
-    -- Ingestion metrics
-    COUNT(*) FILTER (WHERE date_crawled > NOW() - INTERVAL '1 hour')
-        AS jobs_ingested_last_hour,
-    COUNT(*) FILTER (WHERE date_crawled > NOW() - INTERVAL '24 hours')
-        AS jobs_ingested_last_24h,
-    -- Processing metrics
-    COUNT(*) FILTER (WHERE status = 'raw')        AS queue_raw,
-    COUNT(*) FILTER (WHERE status = 'parsed')      AS queue_parsed,
-    COUNT(*) FILTER (WHERE status = 'normalized')  AS queue_normalized,
-    COUNT(*) FILTER (WHERE status = 'geocoded')    AS queue_geocoded,
-    COUNT(*) FILTER (WHERE status = 'ready')       AS total_ready,
-    COUNT(*) FILTER (WHERE status = 'expired')     AS total_expired,
-    -- Failure rate
-    COUNT(*) FILTER (WHERE retry_count > 0)        AS jobs_with_retries,
-    COUNT(*) FILTER (WHERE retry_count >= 3)       AS jobs_in_dlq,
-    -- Data quality
-    COUNT(*) FILTER (WHERE embedding IS NULL AND status = 'ready')
-        AS ready_without_embedding,
-    COUNT(*) FILTER (WHERE salary_annual_min IS NULL AND status = 'ready')
-        AS ready_without_salary,
-    COUNT(*) FILTER (WHERE location IS NULL
-        AND location_type != 'remote' AND status = 'ready')
-        AS ready_without_location,
-    -- Storage
-    pg_database_size(current_database()) AS db_size_bytes
-FROM jobs;
+    s.id,
+    s.name,
+    s.skill_type,
+    s.esco_uri,
+    COUNT(js.job_id) AS job_count,
+    COUNT(js.job_id) FILTER (WHERE j.date_posted > NOW() - INTERVAL '30 days') AS jobs_last_30d,
+    COUNT(js.job_id) FILTER (WHERE j.date_posted > NOW() - INTERVAL '7 days') AS jobs_last_7d,
+    ROUND(AVG(j.salary_annual_max) FILTER (WHERE j.salary_annual_max IS NOT NULL), 0) AS avg_salary,
+    ARRAY_AGG(DISTINCT j.location_region) FILTER (WHERE j.location_region IS NOT NULL) AS top_regions
+FROM skills s
+JOIN job_skills js ON js.skill_id = s.id
+JOIN jobs j ON j.id = js.job_id AND j.status = 'ready'
+GROUP BY s.id, s.name, s.skill_type, s.esco_uri
+ORDER BY job_count DESC;
+
+CREATE UNIQUE INDEX idx_mv_skill_demand_id ON mv_skill_demand(id);
+
+-- Materialized view: skill co-occurrence (which skills appear together)
+CREATE MATERIALIZED VIEW mv_skill_cooccurrence AS
+SELECT
+    js1.skill_id AS skill_a,
+    js2.skill_id AS skill_b,
+    COUNT(*) AS cooccurrence_count
+FROM job_skills js1
+JOIN job_skills js2 ON js1.job_id = js2.job_id AND js1.skill_id < js2.skill_id
+GROUP BY js1.skill_id, js2.skill_id
+HAVING COUNT(*) >= 10
+ORDER BY cooccurrence_count DESC;
+
+CREATE INDEX idx_mv_skill_cooccurrence_a ON mv_skill_cooccurrence(skill_a);
+CREATE INDEX idx_mv_skill_cooccurrence_b ON mv_skill_cooccurrence(skill_b);
+
+-- Schedule materialized view refresh (daily at 3 AM)
+SELECT cron.schedule('refresh-skill-demand', '0 3 * * *',
+    $$REFRESH MATERIALIZED VIEW CONCURRENTLY mv_skill_demand$$);
+SELECT cron.schedule('refresh-skill-cooccurrence', '0 3 * * *',
+    $$REFRESH MATERIALIZED VIEW CONCURRENTLY mv_skill_cooccurrence$$);
 ```
 
-**Alert thresholds (log after every pipeline run):**
-
-- `jobs_ingested_last_hour = 0` for 3 consecutive hours → investigate API keys, circuit breaker state
-- `jobs_in_dlq > 100` → check `last_error` patterns, investigate source quality
-- `ready_without_embedding > 0` → check Gemini API key, rate limits
-
-### 1.5 Row-Level Security (Migration 005)
+**Down migration:**
 
 ```sql
-ALTER TABLE jobs       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sources    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE companies  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE skills     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE job_skills ENABLE ROW LEVEL SECURITY;
-
--- Public read: anyone can read ready jobs (anon key)
-CREATE POLICY "Public can read ready jobs"
-    ON jobs FOR SELECT USING (status = 'ready');
-
--- Service role: pipeline can read/write everything (service_role key)
-CREATE POLICY "Service role full access to jobs"
-    ON jobs FOR ALL USING (auth.role() = 'service_role');
-
--- Public read: reference tables
-CREATE POLICY "Public can read sources"    ON sources    FOR SELECT USING (true);
-CREATE POLICY "Public can read companies"  ON companies  FOR SELECT USING (true);
-CREATE POLICY "Public can read skills"     ON skills     FOR SELECT USING (true);
-CREATE POLICY "Public can read job_skills" ON job_skills FOR SELECT USING (true);
-
--- Service role write: reference tables
-CREATE POLICY "Service role writes sources"    ON sources    FOR ALL USING (auth.role() = 'service_role');
-CREATE POLICY "Service role writes companies"  ON companies  FOR ALL USING (auth.role() = 'service_role');
-CREATE POLICY "Service role writes skills"     ON skills     FOR ALL USING (auth.role() = 'service_role');
-CREATE POLICY "Service role writes job_skills" ON job_skills FOR ALL USING (auth.role() = 'service_role');
+SELECT cron.unschedule('refresh-skill-demand');
+SELECT cron.unschedule('refresh-skill-cooccurrence');
+DROP MATERIALIZED VIEW IF EXISTS mv_skill_cooccurrence;
+DROP MATERIALIZED VIEW IF EXISTS mv_skill_demand;
+ALTER TABLE skills DROP COLUMN IF EXISTS aliases;
+ALTER TABLE skills DROP COLUMN IF EXISTS source;
+DROP INDEX IF EXISTS idx_esco_skills_label_trgm;
+DROP TABLE IF EXISTS esco_skills;
 ```
 
-**Key principle:** Frontend (anon key) can ONLY read `status='ready'` jobs and reference tables. Pipeline (service_role key) can read/write everything — used only in server-side Python. The anon key is safe for browser because RLS restricts what it can see.
-
-### 1.6 Seed Data
+### 2.2 Migration 008: Advanced Dedup Infrastructure (Stage 2)
 
 ```sql
--- Tier 1: Reference data (seed.sql, committed to git)
-INSERT INTO sources (name, api_base_url, is_active) VALUES
-    ('reed',      'https://www.reed.co.uk/api/1.0',            true),
-    ('adzuna',    'https://api.adzuna.com/v1/api/jobs/gb',      true),
-    ('jooble',    'https://jooble.org/api',                     true),
-    ('careerjet', 'https://search.api.careerjet.net/v4',        true);
+-- Add fuzzy dedup columns and indexes to jobs table
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS canonical_id BIGINT REFERENCES jobs(id);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_duplicate BOOLEAN DEFAULT FALSE;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS duplicate_score FLOAT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS description_hash TEXT;  -- MinHash signature stored as hex
+
+-- GIN trigram indexes for fuzzy matching (title already has one from Phase 1)
+CREATE INDEX idx_jobs_company_trgm ON jobs USING gin(company_name gin_trgm_ops);
+
+-- B-tree for canonical_id lookups
+CREATE INDEX idx_jobs_canonical ON jobs(canonical_id) WHERE canonical_id IS NOT NULL;
+
+-- Partial index: only non-duplicate ready jobs for search
+CREATE INDEX idx_jobs_ready_not_dup ON jobs(status, is_duplicate) WHERE status = 'ready' AND is_duplicate = FALSE;
+
+-- Composite dedup scoring function
+CREATE OR REPLACE FUNCTION compute_duplicate_score(
+    title_sim FLOAT,         -- pg_trgm similarity on title
+    company_match BOOLEAN,   -- exact or fuzzy company match
+    location_km FLOAT,       -- distance between locations in km
+    salary_overlap FLOAT,    -- 0-1 overlap ratio
+    date_diff_days INT       -- days between posting dates
+) RETURNS FLOAT
+LANGUAGE sql IMMUTABLE AS $$
+SELECT
+    (title_sim * 0.35) +
+    (CASE WHEN company_match THEN 0.25 ELSE 0.0 END) +
+    (CASE WHEN location_km <= 5 THEN 0.15 WHEN location_km <= 25 THEN 0.08 ELSE 0.0 END) +
+    (salary_overlap * 0.15) +
+    (CASE WHEN date_diff_days <= 7 THEN 0.10 WHEN date_diff_days <= 14 THEN 0.05 ELSE 0.0 END);
+$$;
 ```
 
-Tier 2 (seed_jobs.py): Faker-generated 1,000–5,000 realistic UK jobs. Command: `just seed:dev`.
-Tier 3 (seed_bulk.py): 500K jobs via PostgreSQL `COPY`. Command: `just seed:perf`. Never run against production.
-
----
-
-## 2. API Contracts
-
-### 2.1 Reed API
-
-| Field | Value |
-|---|---|
-| Base URL | `https://www.reed.co.uk/api/1.0/search` |
-| Auth | Basic Auth: API key as username, empty string as password |
-| Rate limit | Max 2 requests/second (self-imposed; Jobseeker API not explicitly limited) |
-| Pagination | `resultsToTake` (max 100), `resultsToSkip` (offset). Response includes `totalResults`. |
-| Fetch frequency | Every 30 minutes |
-| Coverage strategy | Category sweep: iterate all Reed sectors with `postedWithin=1` (last 24 hours) |
-
-**Key response fields:**
-
-| Field | Type | Maps to |
-|---|---|---|
-| `jobId` | int | `external_id` |
-| `employerId` | int | company dedup |
-| `jobTitle` | string | `title` |
-| `jobDescription` | string (HTML) | `description` → strip tags → `description_plain` |
-| `locationName` | string | `location_raw` |
-| `minimumSalary` | number or null | `salary_min` (annual) |
-| `maximumSalary` | number or null | `salary_max` (annual) |
-| `currency` | string | `salary_currency` |
-| `expirationDate` | ISO date | `date_expires` (Reed provides this directly) |
-| `date` | ISO date | `date_posted` |
-| `jobUrl` | string | `source_url` |
-| `partTime` / `fullTime` | bool | `employment_type` array |
-| `contractType` | string | `employment_type` array (permanent/contract/temp) |
-
-### 2.2 Adzuna API
-
-| Field | Value |
-|---|---|
-| Base URL | `https://api.adzuna.com/v1/api/jobs/gb/search/{page}` |
-| Auth | Query params: `app_id` + `app_key` |
-| Rate limit | Free tier: ~250–500 calls/day. 1-second sleep between requests. |
-| Pagination | `results_per_page` (max 50). Page number in URL path, starting at 1. |
-| Fetch frequency | Every 60 minutes |
-| Coverage strategy | Category + date sweep: fetch categories endpoint, then sweep each with `max_days_old=1`, `sort_by=date` |
-
-**Key response fields:**
-
-| Field | Type | Maps to |
-|---|---|---|
-| `id` | string | `external_id` |
-| `title` | string | `title` |
-| `description` | string (plain text) | `description` / `description_plain` |
-| `redirect_url` | string | `source_url` |
-| `created` | ISO date | `date_posted` |
-| `location.display_name` | string | `location_raw` |
-| `location.area` | array | location hierarchy: `['UK','London','Central London','The City']` |
-| `latitude` / `longitude` | float | **Direct coordinates — skip postcodes.io for Adzuna jobs** |
-| `salary_min` / `salary_max` | number or null | `salary_min` / `salary_max` (annual GBP) |
-| `salary_is_predicted` | 0 or 1 | `salary_is_predicted` (1 = Adzuna's ML estimate, not employer-stated) |
-| `category.tag` | string | `category_raw` → map to internal category |
-| `company.display_name` | string | `company_name` |
-| `contract_type` | string or null | `employment_type` |
-| `contract_time` | string or null | `employment_type` |
-
-**No `date_expires` provided.** Use 45-day default from `date_posted`.
-
-### 2.3 Jooble API
-
-| Field | Value |
-|---|---|
-| Endpoint | `POST https://jooble.org/api/{API_KEY}` |
-| Auth | API key embedded in URL path |
-| Rate limit | No documented limit. 1-second sleep between requests. |
-| Pagination | JSON body: `keywords`, `location`, `page` (1-indexed). ~20 results per page. **No `totalResults` returned** — paginate until results array is empty. |
-| Fetch frequency | Every 2 hours |
-| Coverage strategy | Keyword sweep across major job categories |
-
-**Critical detail:** Jooble is an aggregator — expect significant overlap with Reed/Adzuna. Run deduplication aggressively via `content_hash`.
-
-### 2.4 Careerjet API v4
-
-| Field | Value |
-|---|---|
-| Endpoint | `GET https://search.api.careerjet.net/v4/query` |
-| Auth | `affid` query parameter (affiliate ID from registration) |
-| Rate limit | No documented limit. 1-second sleep between requests. |
-| Required params | **`user_ip`** and **`user_agent`** (anti-fraud, new in v4). Pass the Modal worker's IP and a descriptive user-agent string. |
-| Pagination | Standard offset/limit parameters |
-| Fetch frequency | Every 2 hours (offset 30min from Jooble) |
-
-**Critical detail:** The official Python library only supports Python 2. Use `httpx` to call the REST API directly. v4 returns structured salary fields: `salary_currency_code`, `salary_min`, `salary_max`, `salary_type`.
-
-### 2.5 Fetch Schedule Summary
-
-| Source | Frequency | Strategy | Results/page | Sleep between |
-|---|---|---|---|---|
-| Reed | Every 30 min | Category sweep, `postedWithin=1` | 100 | 0.5s |
-| Adzuna | Every 60 min | Category + date sweep, `max_days_old=1` | 50 | 1.0s |
-| Jooble | Every 2 hours | Keyword sweep | ~20 | 1.0s |
-| Careerjet | Every 2 hours (offset 30min) | Keyword + location sweep | varies | 1.0s |
-
-### 2.6 Circuit Breaker
-
-All collectors share a circuit breaker pattern:
-
-| State | Behaviour |
-|---|---|
-| **CLOSED** (normal) | Execute requests. Count consecutive failures. |
-| **OPEN** (tripped) | Skip all requests. After `recovery_timeout` (300s), move to HALF_OPEN. |
-| **HALF_OPEN** (testing) | Allow one request. If success → CLOSED. If fail → OPEN. |
-
-**Threshold:** 3 consecutive failures trip the breaker. Failures include: `httpx.TimeoutError`, `httpx.HTTPStatusError` (5xx), connection errors. 429 responses do NOT trip the breaker — they trigger `Retry-After` backoff instead.
-
-### 2.7 Rate Limit Handler
-
-```python
-async def fetch_with_retry(client, url, params, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            resp = await client.get(url, params=params)
-            if resp.status_code == 429:
-                retry_after = int(resp.headers.get('Retry-After', 60))
-                await asyncio.sleep(retry_after)
-                continue
-            resp.raise_for_status()
-            return resp.json()
-        except httpx.TimeoutError:
-            await asyncio.sleep(2 ** attempt)
-    raise MaxRetriesExceeded(url)
-```
-
----
-
-## 3. Processing Rules
-
-### 3.1 State Machine
-
-```
-raw → parsed → normalized → [dedup gate] → geocoded → embedded → ready
-                                                                    ↓
-ready → expired → archived → deleted (hard delete after 180 days)
-```
-
-**Note on dedup:** Deduplication is a gate, not a transformation. Jobs pass through to `geocode_queue` if unique, or get silently skipped if duplicate (DuplicateError). No separate "deduplicated" status in the jobs table — the status stays "normalized" until geocoding completes.
-
-### 3.2 Queue Flow
-
-| Queue | Reads status | Sets status on success | Next queue |
-|---|---|---|---|
-| `parse_queue` | `raw` | `parsed` | `normalize_queue` |
-| `normalize_queue` | `parsed` | `normalized` | `dedup_queue` |
-| `dedup_queue` | `normalized` | (unchanged — gate only) | `geocode_queue` |
-| `geocode_queue` | `normalized` | `geocoded` | `embed_queue` |
-| `embed_queue` | `geocoded` | `embedded` → `ready` | (done) |
-| `dead_letter_queue` | any failed | (unchanged) | auto-retry after 6 hours |
-
-**DLQ handling:** Auto-retry after 6 hours. Route back to the original queue based on `msg->>'failed_stage'`. Max 5 retries total. If >5% of a source's jobs enter DLQ, investigate source quality.
+**Down migration:**
 
 ```sql
--- Auto-retry DLQ jobs older than 6 hours
-WITH retry AS (
-    SELECT * FROM pgmq.read('dead_letter_queue', 300, 50)
-    WHERE enqueued_at < NOW() - INTERVAL '6 hours'
-)
-SELECT pgmq.send(
-    CASE
-        WHEN msg->>'failed_stage' = 'geocode' THEN 'geocode_queue'
-        WHEN msg->>'failed_stage' = 'embed'   THEN 'embed_queue'
-        ELSE 'parse_queue'
-    END,
-    msg || jsonb_build_object('retry_count', (msg->>'retry_count')::int + 1)
-)
-FROM retry
-WHERE (msg->>'retry_count')::int < 5;
+DROP FUNCTION IF EXISTS compute_duplicate_score;
+DROP INDEX IF EXISTS idx_jobs_ready_not_dup;
+DROP INDEX IF EXISTS idx_jobs_canonical;
+DROP INDEX IF EXISTS idx_jobs_company_trgm;
+ALTER TABLE jobs DROP COLUMN IF EXISTS description_hash;
+ALTER TABLE jobs DROP COLUMN IF EXISTS duplicate_score;
+ALTER TABLE jobs DROP COLUMN IF EXISTS is_duplicate;
+ALTER TABLE jobs DROP COLUMN IF EXISTS canonical_id;
 ```
 
-### 3.3 Salary Normalization
-
-**Constants (Doc 9 — resolved, UK financial convention):**
-
-```python
-UK_WORKING_DAYS_PER_YEAR  = 252    # 260 weekdays - 8 UK bank holidays
-UK_WORKING_HOURS_PER_YEAR = 1950   # 37.5 hours/week × 52 weeks
-UK_MONTHS_PER_YEAR        = 12
-```
-
-**12 salary patterns:**
-
-| # | Input pattern | Regex / detection | Normalization |
-|---|---|---|---|
-| 1 | £25,000 – £30,000 | `\d{1,3}(?:,\d{3})+` | Direct: min=25000, max=30000 |
-| 2 | £25k – £30k | `\d+k` | Multiply by 1000 |
-| 3 | £250–£350 per day | `per day\|daily\|day rate` | × 252 |
-| 4 | £15–£20 per hour | `per hour\|hourly\|p/h` | × 1950 |
-| 5 | £2,000–£3,000 per month | `per month\|monthly\|pcm` | × 12 |
-| 6 | £50,000 pro rata | `pro rata` | Store as-is. Flag `salary_raw` |
-| 7 | £50,000 OTE | `ote\|on target` | Store as max. Flag OTE in `salary_raw` |
-| 8 | Competitive | `competitive\|attractive` | Set both to NULL. `salary_raw='Competitive'` |
-| 9 | DOE / Negotiable | `doe\|negotiable\|depending` | NULL. Preserve in `salary_raw` |
-| 10 | Up to £40,000 | `up to\|to \d` | min=NULL, max=40000 |
-| 11 | From £25,000 | `from \d` | min=25000, max=NULL |
-| 12 | £50,000 + benefits | `\d.*benefits` | min=max=50000. Ignore benefits text. |
-
-**Salary parsing priority:**
-
-1. Use structured API fields first (Reed: `minimumSalary`/`maximumSalary`, Adzuna: `salary_min`/`salary_max`)
-2. If API fields are null, parse `salary_raw` text using regex patterns above
-3. Always store the original text in `salary_raw` for audit/reprocessing
-4. Flag Adzuna's `salary_is_predicted=1` with `salary_is_predicted=true`
-5. **Sanity check:** reject `salary_annual < 10,000` or `> 500,000` (likely errors)
-
-### 3.4 Location Normalization
-
-| Input | Problem | Resolution |
-|---|---|---|
-| `'London'` | Too broad | Default to Central London coords. city='London', region='Greater London' |
-| `'Central London'` | Not a postcode area | Map to EC/WC coordinates centroid |
-| `'City of London'` | Specific area | Map to EC postcode area |
-| `'London EC2'` | Partial postcode | postcodes.io outcodes endpoint: `/outcodes/EC2` |
-| `'Manchester'` | City OK | Default to city centre coordinates |
-| `'Near Birmingham'` | 'Near' prefix | Strip 'near', geocode 'Birmingham', set wider radius |
-| `'South East'` | Region only | Set `location_region='South East England'`, no city, no point geometry |
-| `'Remote'` | No physical location | Set `location_type='remote'`, no geometry. UK-wide search. |
-| `'Hybrid - Leeds'` | Type + location | Extract `location_type='hybrid'`, geocode 'Leeds' |
-| `'Various locations'` | Multi-site | Set `location_type='nationwide'`, no geometry |
-
-**Geocoding pipeline (priority order):**
-
-1. **Adzuna:** Use provided `latitude`/`longitude` directly — skip postcodes.io
-2. **Extract UK postcode** via regex `[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}` → postcodes.io lookup
-3. **City/town lookup** via postcodes.io places endpoint: `GET /places?q={city}`
-4. **Fallback:** Pre-populated table of ~100 UK cities with coordinates
-5. **No geocoding possible:** Set `location_type` from keywords, leave geometry NULL
-
-**Postcodes.io usage:** Bulk endpoint `POST /postcodes` accepts up to 100 postcodes per request. 200ms delay between batches. No auth required. Max 3 retries with exponential backoff.
-
-### 3.5 Category Mapping
-
-**Reed → Internal (authoritative, Doc 5):**
-
-| AtoZ Internal | Reed Sector | Adzuna Tag |
-|---|---|---|
-| Technology | IT & Telecoms | `it-jobs` |
-| Finance | Accountancy, Banking & Finance | `accounting-finance-jobs` |
-| Healthcare | Health & Medicine | `healthcare-nursing-jobs` |
-| Engineering | Engineering | `engineering-jobs` |
-| Education | Education | `teaching-jobs` |
-| Sales & Marketing | Sales + Marketing & PR | `sales-jobs`, `pr-advertising-marketing-jobs` |
-| Legal | Legal | `legal-jobs` |
-| Construction | Construction & Property | `construction-jobs` |
-| Creative & Media | Creative & Design + Media | `creative-design-jobs` |
-| Hospitality | Catering & Hospitality | `hospitality-catering-jobs` |
-| Other | Anything unmapped | Anything unmapped |
-
-**Jooble/Careerjet — title keyword inference (Doc 9):**
-
-| Category | Keywords (case-insensitive, word boundary) |
-|---|---|
-| Technology | software, developer, devops, data scientist, sre, frontend, backend, fullstack, cloud, cyber, sysadmin, QA, tester, IT support |
-| Finance | accountant, finance, auditor, tax, payroll, bookkeeper, actuary, FCA, ACCA, CIMA, treasury |
-| Healthcare | nurse, doctor, GP, pharmacist, midwife, carer, clinical, NHS, paramedic, dentist, optometrist |
-| Engineering | mechanical, electrical, civil, structural, chemical engineer, CAD, BIM, surveyor, quantity surveyor |
-| Education | teacher, lecturer, tutor, teaching assistant, SENCO, headteacher, professor, trainer |
-| Sales & Marketing | sales, marketing, SEO, PPC, campaign, brand, account manager, business development, BDM, copywriter |
-| Legal | solicitor, barrister, paralegal, legal, conveyancer, regulatory |
-| Construction | construction, plumber, electrician, carpenter, bricklayer, site manager, foreman, CSCS, scaffolder |
-| Creative & Media | designer, graphic, UX, UI, photographer, videographer, animator, journalist, editor, producer |
-| Hospitality | chef, cook, waiter, bartender, hotel, catering, kitchen, front of house, restaurant |
-| Other | Default fallback |
-
-**Priority order:** (1) Reed/Adzuna: use exhaustive source→internal mapping. (2) Jooble/Careerjet: attempt source category match first, fall back to title keyword inference. (3) All sources: preserve original category in `raw_data` JSONB.
-
-### 3.6 Seniority Extraction
-
-Regex patterns against job title:
-
-| Pattern | Seniority level |
-|---|---|
-| `junior\|entry\|graduate\|intern\|trainee` | Junior |
-| `mid\|intermediate` | Mid |
-| `senior\|sr\.` | Senior |
-| `lead\|principal\|staff` | Lead |
-| `head\|director\|vp\|chief\|cto\|cfo` | Executive |
-| (no match) | `'Not specified'` — never guess |
-
-**Experience years extraction:** `(\d+)\+?\s*(?:years?|yrs?)\s*(?:of\s+)?(?:experience|exp)`
-
-### 3.7 Structured Summary Template
-
-**6 fields. All rule-based. $0/job. Doc 8 + Doc 11 authority.**
-
-```
-Title: {title}
-Seniority: {seniority_level or 'Not specified'}
-Company: {company_name} ({industry or 'Unknown'})
-Skills: {keyword-matched skills, max 15}
-Work Type: {employment_type} | {location_type}
-Location: {location_city}, {location_region}
-```
-
-**Field extraction rules:**
-
-- **title:** Use exactly as provided by the API. Do NOT normalize — 'Senior Software Engineer' and 'Lead Developer' carry different semantic signals.
-- **seniority_level:** Regex patterns from §3.6. Default 'Not specified'.
-- **company + industry:** Industry from Adzuna's category field or the internal category mapping. Include both because 'Python Developer at Goldman Sachs (Financial Services)' embeds differently from 'Python Developer at Spotify (Music Technology)'.
-- **skills:** Regex/set matching from ESCO dictionary (§3.8). Max 15, ordered by frequency of mention. Confidence = 1.0 for exact matches.
-- **employment_type + location_type:** Combined as 'Full-time, Permanent | Hybrid' or 'Contract | Remote'.
-- **location:** City + region format: 'Manchester, North West'. Remote: 'Remote, UK-wide'. Nationwide: 'Multiple locations, UK'.
-
-**What is NOT in the template:** Summary sentences (removed — saves $50/mo LLM cost), Requirements field (removed), salary, exact postcode, contract end date. These are SQL filter material, not semantic embedding material.
-
-### 3.8 Skill Extraction
-
-**Method:** Pure Python regex + ESCO dictionary. No SpaCy. No LLM. (Doc 11 authority)
-
-**Dictionary build process (~4 hours):**
-
-1. Download ESCO v1.2.1 CSV: `skills_en.csv` (~13,939 rows) from `esco.ec.europa.eu/en/use-esco/download`
-2. Parse `preferredLabel` and `altLabels` into `dict[str, str]` (lowercase key → canonical name)
-3. Add ~300 UK-specific entries: GCSE, A-Level, BTEC, NVQ, CSCS, SMSTS, SIA licence, ACCA, CIMA, AAT, CIPD, DBS check, NMC registered, Full UK driving licence, etc.
-4. Merge with SkillNER's embedded EMSI/Lightcast database (~25K–32K skills, MIT-licensed)
-5. Deduplicate by lowercase key. Output: `pipeline/src/skills/dictionary.py` containing `SKILLS_DICT: dict[str, str]` (~10K–15K canonical skills, ~25K–35K matching patterns)
-
-**Runtime matching:** Tokenize `description_plain`, match against dictionary with case-insensitive lookup, order by frequency of mention, cap at 15 skills per job. Store in `job_skills` junction table with `confidence = 1.0` for exact matches.
-
-**Expected accuracy:** ~70–80%. Phase 2 upgrade path: feed Phase 1 results into SpaCy PhraseMatcher or custom NER model.
-
----
-
-## 4. Embedding Pipeline
-
-### 4.1 Model: Gemini embedding-001
-
-| Parameter | Value |
-|---|---|
-| Model | `gemini-embedding-001` |
-| Dimensions | 768 (native MRL support via `output_dimensionality`) |
-| Batch size | 100 per request (API allows 250; use 100 for reliability) |
-| Cost | $0 on free tier. $0.15/1M tokens on paid. |
-| MTEB retrieval score | ~67.7 (6+ points above OpenAI 3-small at ~52) |
-| Auth | `GOOGLE_API_KEY` environment variable (auto-detected by SDK) |
-| SDK | `google-genai>=1.0` |
-| Re-normalization | Required after MRL dimension truncation. `vec / np.linalg.norm(vec)` |
-
-### 4.2 Production Code (Doc 11)
-
-```python
-# pipeline/src/embeddings/embed.py
-import asyncio
-import numpy as np
-import structlog
-from google import genai
-from google.genai import types
-
-logger = structlog.get_logger()
-
-GEMINI_MODEL = "gemini-embedding-001"
-GEMINI_BATCH_SIZE = 100
-GEMINI_DIMS = 768
-MAX_RETRIES = 5
-
-_client = genai.Client()
-
-async def embed_batch(texts: list[str]) -> list[list[float]]:
-    """Embed up to GEMINI_BATCH_SIZE texts. Returns normalized 768-dim vectors."""
-    for attempt in range(MAX_RETRIES):
-        try:
-            result = _client.models.embed_content(
-                model=GEMINI_MODEL,
-                contents=texts,
-                config=types.EmbedContentConfig(
-                    output_dimensionality=GEMINI_DIMS
-                ),
-            )
-            vectors = []
-            for emb in result.embeddings:
-                vec = np.array(emb.values, dtype=np.float32)
-                norm = np.linalg.norm(vec)
-                if norm > 0:
-                    vec = vec / norm  # Re-normalize after MRL truncation
-                vectors.append(vec.tolist())
-            return vectors
-        except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                wait = min(2 ** attempt * 2, 60)
-                logger.warning("gemini_rate_limited", attempt=attempt, wait=wait)
-                await asyncio.sleep(wait)
-                continue
-            logger.error("gemini_embed_error", error=error_str, attempt=attempt)
-            if attempt == MAX_RETRIES - 1:
-                raise
-            await asyncio.sleep(2 ** attempt)
-    raise RuntimeError(f"Embedding failed after {MAX_RETRIES} retries")
-
-async def embed_all(texts: list[str]) -> list[list[float]]:
-    """Embed any number of texts in batches with rate limiting."""
-    all_vectors: list[list[float]] = []
-    for i in range(0, len(texts), GEMINI_BATCH_SIZE):
-        batch = texts[i:i + GEMINI_BATCH_SIZE]
-        vectors = await embed_batch(batch)
-        all_vectors.extend(vectors)
-        if i + GEMINI_BATCH_SIZE < len(texts):
-            await asyncio.sleep(0.5)  # Rate limit on free tier
-    return all_vectors
-```
-
-### 4.3 Fallback: OpenAI text-embedding-3-small
-
-Activate only if Gemini returns >10% error rate over a 1-hour window. Lazy-initialize the OpenAI client. OpenAI's $5 free credits cover ~500M tokens = 3.3M job embeddings.
-
-### 4.4 Backfill Strategy
-
-- **Batch API** for initial 500K backfill: upload JSONL, Google processes within 24 hours, $0 on free tier.
-- **Real-time API** for daily 2K–5K new jobs: ~750K tokens/day at 250K TPM completes in ~3 minutes.
-
----
-
-## 5. search_jobs() Function
+### 2.3 Migration 009: Salary Prediction & Company Enrichment (Stage 3)
 
 ```sql
-CREATE OR REPLACE FUNCTION search_jobs(
+-- Salary prediction columns
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary_predicted_min NUMERIC(12,2);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary_predicted_max NUMERIC(12,2);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary_confidence FLOAT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary_model_version TEXT;
+
+-- Company enrichment columns
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS companies_house_number TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS sic_codes TEXT[];
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS company_status TEXT;     -- 'active','dissolved', etc.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS date_of_creation DATE;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS registered_address JSONB;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS enriched_at TIMESTAMPTZ;
+
+CREATE INDEX idx_companies_house_number ON companies(companies_house_number)
+    WHERE companies_house_number IS NOT NULL;
+
+-- SIC code to industry category mapping table
+CREATE TABLE sic_industry_map (
+    sic_section  CHAR(1) PRIMARY KEY,  -- A-U
+    sic_label    TEXT NOT NULL,
+    internal_category TEXT NOT NULL     -- maps to our category taxonomy
+);
+
+-- Seed SIC sections → internal categories
+INSERT INTO sic_industry_map (sic_section, sic_label, internal_category) VALUES
+    ('A', 'Agriculture, Forestry and Fishing', 'Agriculture'),
+    ('B', 'Mining and Quarrying', 'Energy & Utilities'),
+    ('C', 'Manufacturing', 'Manufacturing'),
+    ('D', 'Electricity, Gas, Steam', 'Energy & Utilities'),
+    ('E', 'Water Supply, Sewerage', 'Energy & Utilities'),
+    ('F', 'Construction', 'Construction'),
+    ('G', 'Wholesale and Retail Trade', 'Retail'),
+    ('H', 'Transportation and Storage', 'Logistics & Transport'),
+    ('I', 'Accommodation and Food Service', 'Hospitality'),
+    ('J', 'Information and Communication', 'Technology'),
+    ('K', 'Financial and Insurance', 'Finance'),
+    ('L', 'Real Estate Activities', 'Property'),
+    ('M', 'Professional, Scientific and Technical', 'Professional Services'),
+    ('N', 'Administrative and Support Service', 'Administration'),
+    ('O', 'Public Administration and Defence', 'Public Sector'),
+    ('P', 'Education', 'Education'),
+    ('Q', 'Human Health and Social Work', 'Healthcare'),
+    ('R', 'Arts, Entertainment and Recreation', 'Creative & Media'),
+    ('S', 'Other Service Activities', 'Other'),
+    ('T', 'Households as Employers', 'Other'),
+    ('U', 'Extraterritorial Organisations', 'Other');
+```
+
+**Down migration:**
+
+```sql
+DROP TABLE IF EXISTS sic_industry_map;
+DROP INDEX IF EXISTS idx_companies_house_number;
+ALTER TABLE companies DROP COLUMN IF EXISTS enriched_at;
+ALTER TABLE companies DROP COLUMN IF EXISTS registered_address;
+ALTER TABLE companies DROP COLUMN IF EXISTS date_of_creation;
+ALTER TABLE companies DROP COLUMN IF EXISTS company_status;
+ALTER TABLE companies DROP COLUMN IF EXISTS sic_codes;
+ALTER TABLE companies DROP COLUMN IF EXISTS companies_house_number;
+ALTER TABLE jobs DROP COLUMN IF EXISTS salary_model_version;
+ALTER TABLE jobs DROP COLUMN IF EXISTS salary_confidence;
+ALTER TABLE jobs DROP COLUMN IF EXISTS salary_predicted_max;
+ALTER TABLE jobs DROP COLUMN IF EXISTS salary_predicted_min;
+```
+
+### 2.4 Migration 010: User Profiles & Re-ranking Support (Stage 4)
+
+```sql
+-- User profiles table (for authenticated job seekers)
+CREATE TABLE user_profiles (
+    id              UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    target_role     TEXT,
+    skills          TEXT[],
+    experience_text TEXT,
+    preferred_location TEXT,
+    preferred_lat   FLOAT,
+    preferred_lng   FLOAT,
+    work_preference TEXT,           -- 'remote','hybrid','onsite','any'
+    min_salary      INT,
+    profile_embedding HALFVEC(768),
+    profile_text    TEXT,           -- the structured template used for embedding
+    updated_at      TIMESTAMPTZ DEFAULT now()
+);
+
+-- RLS for user profiles
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read own profile"
+    ON user_profiles FOR SELECT
+    USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile"
+    ON user_profiles FOR ALL
+    USING (auth.uid() = id);
+
+CREATE POLICY "Service role full access to profiles"
+    ON user_profiles FOR ALL
+    USING (auth.role() = 'service_role');
+
+-- Updated search function with re-ranking support
+-- Returns expanded fields needed by cross-encoder
+CREATE OR REPLACE FUNCTION search_jobs_v2(
     query_text       TEXT DEFAULT NULL,
     query_embedding  HALFVEC(768) DEFAULT NULL,
     search_lat       FLOAT DEFAULT NULL,
@@ -733,25 +266,52 @@ CREATE OR REPLACE FUNCTION search_jobs(
     radius_miles     FLOAT DEFAULT 25,
     include_remote   BOOLEAN DEFAULT TRUE,
     min_salary       INT DEFAULT NULL,
+    max_salary       INT DEFAULT NULL,
     work_type_filter TEXT DEFAULT NULL,
-    match_count      INT DEFAULT 20,
+    category_filter  TEXT DEFAULT NULL,
+    skill_filters    TEXT[] DEFAULT NULL,
+    exclude_duplicates BOOLEAN DEFAULT TRUE,
+    match_count      INT DEFAULT 50,
     rrf_k            INT DEFAULT 50
 )
-RETURNS TABLE (id BIGINT, title TEXT, company TEXT, rrf_score FLOAT)
+RETURNS TABLE (
+    id BIGINT,
+    title TEXT,
+    company_name TEXT,
+    description_plain TEXT,
+    location_city TEXT,
+    location_region TEXT,
+    location_type TEXT,
+    salary_annual_min NUMERIC,
+    salary_annual_max NUMERIC,
+    salary_predicted_min NUMERIC,
+    salary_predicted_max NUMERIC,
+    salary_is_predicted BOOLEAN,
+    employment_type TEXT[],
+    seniority_level TEXT,
+    category TEXT,
+    date_posted TIMESTAMPTZ,
+    source_url TEXT,
+    rrf_score FLOAT
+)
 LANGUAGE sql AS $$
--- NOTE: Using <=> (cosine distance) with halfvec_cosine_ops index.
--- Mathematically equivalent to <#> (inner product) for normalized vectors.
--- All embeddings are re-normalized after Matryoshka dimension reduction.
 WITH filtered AS (
     SELECT j.id FROM jobs j
     WHERE j.status = 'ready'
+      AND (NOT exclude_duplicates OR j.is_duplicate IS NOT TRUE)
       AND (include_remote AND j.location_type IN ('remote','nationwide')
         OR j.location_type IN ('onsite','hybrid')
           AND (search_lat IS NULL OR ST_DWithin(j.location,
             ST_SetSRID(ST_MakePoint(search_lng, search_lat), 4326)::geography,
             radius_miles * 1609.344)))
-      AND (min_salary IS NULL OR j.salary_annual_max >= min_salary)
+      AND (min_salary IS NULL OR COALESCE(j.salary_annual_max, j.salary_predicted_max) >= min_salary)
+      AND (max_salary IS NULL OR COALESCE(j.salary_annual_min, j.salary_predicted_min) <= max_salary)
       AND (work_type_filter IS NULL OR work_type_filter = ANY(j.employment_type))
+      AND (category_filter IS NULL OR j.category = category_filter)
+      AND (skill_filters IS NULL OR EXISTS (
+          SELECT 1 FROM job_skills js
+          JOIN skills s ON s.id = js.skill_id
+          WHERE js.job_id = j.id AND s.name = ANY(skill_filters)))
 ),
 fts AS (
     SELECT f.id, ROW_NUMBER() OVER(
@@ -768,7 +328,14 @@ semantic AS (
     WHERE query_embedding IS NOT NULL AND j.embedding IS NOT NULL
     LIMIT match_count * 2
 )
-SELECT j.id, j.title, j.company_name,
+SELECT
+    j.id, j.title, j.company_name, j.description_plain,
+    j.location_city, j.location_region, j.location_type,
+    j.salary_annual_min, j.salary_annual_max,
+    j.salary_predicted_min, j.salary_predicted_max,
+    j.salary_is_predicted,
+    j.employment_type, j.seniority_level, j.category,
+    j.date_posted, j.source_url,
     COALESCE(1.0/(rrf_k + fts.rank), 0)
   + COALESCE(1.0/(rrf_k + semantic.rank), 0) AS rrf_score
 FROM fts FULL OUTER JOIN semantic ON fts.id = semantic.id
@@ -777,115 +344,688 @@ ORDER BY rrf_score DESC LIMIT match_count;
 $$;
 ```
 
-**Design rationale:** Pre-filter CTE eliminates geographically distant jobs via GIST index before the expensive vector/FTS stages. RRF with k=50 combines both rankings without tuning weights. When only `query_text` or only `query_embedding` is provided, the missing CTE returns empty and RRF degrades gracefully to single-signal ranking.
+**Down migration:**
+
+```sql
+DROP FUNCTION IF EXISTS search_jobs_v2;
+DROP POLICY IF EXISTS "Service role full access to profiles" ON user_profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON user_profiles;
+DROP POLICY IF EXISTS "Users can read own profile" ON user_profiles;
+DROP TABLE IF EXISTS user_profiles;
+```
 
 ---
 
-## 6. Expiry Rules
+## 3. Stage 1: Skills Extraction & Taxonomy (Week 5)
 
-| Source | Expiry detection | Default if no signal |
-|---|---|---|
-| Reed | `expirationDate` field provided directly | 30 days from `date_posted` |
-| Adzuna | No expiry field | 45 days from `date_posted` |
-| Jooble | No expiry field | 30 days from `date_posted` |
-| Careerjet | No expiry field | 30 days from `date_posted` |
+### 3.1 ESCO Dataset Loading
 
-**Re-crawl detection:** When `external_id` reappears with different `content_hash`, update fields and re-process from `parsed`. When `external_id` disappears for 2 consecutive fetch cycles, mark expired (handles API pagination inconsistency).
+**Source:** `https://esco.ec.europa.eu/en/use-esco/download` → CSV format → Skills pillar → English.
 
-**State transitions:** `ready → expired` (when `date_expires` passes OR re-verification finds job removed) → `archived` (after 90 days) → hard delete with CASCADE (after 180 days). Keep embeddings for 90 days after expiry for analytics.
+**File:** `skills_en.csv` (~13,939 rows). Columns: `conceptUri`, `skillType`, `preferredLabel`, `altLabels`, `description`.
 
----
+**Loading strategy:**
 
-## 7. Cost Calculations
+```python
+# pipeline/src/skills/esco_loader.py
+import csv
 
-### 7.1 Monthly Budget (Doc 11 — canonical)
+def load_esco_csv(filepath: str) -> dict[str, dict]:
+    """Load ESCO skills CSV into structured dict.
+    Returns: {concept_uri: {preferred_label, alt_labels, skill_type, description}}
+    """
+    skills = {}
+    with open(filepath) as f:
+        for row in csv.DictReader(f):
+            uri = row["conceptUri"].strip()
+            preferred = row["preferredLabel"].strip()
+            alt_labels = [
+                a.strip() for a in row.get("altLabels", "").split("\n")
+                if a.strip() and len(a.strip()) > 2
+            ]
+            skills[uri] = {
+                "preferred_label": preferred,
+                "alt_labels": alt_labels,
+                "skill_type": row.get("skillType", "").strip(),
+                "description": row.get("description", "").strip(),
+            }
+    return skills
+```
 
-| Item | Provider | Cost | Notes |
+**Seed the `esco_skills` table:** Bulk insert all 13,939 rows. One-time operation.
+
+**Seed the `skills` table:** Deduplicated canonical skills (~10K–15K) from ESCO + SkillNER + UK-specific entries. Each row gets an `esco_uri` if it came from ESCO.
+
+### 3.2 SpaCy PhraseMatcher (Phase 2 Upgrade from Phase 1 Regex)
+
+**Why upgrade now:** Phase 1 used pure Python regex/set matching (~70–80% accuracy). Phase 2 upgrades to SpaCy PhraseMatcher for ~85–95% precision and ~65–80% recall (F1 ~75–85%). The interface is identical: `extract(text, max_skills) → list[str]`. Zero changes to calling code.
+
+**Architecture: two-layer PhraseMatcher.**
+
+```python
+# pipeline/src/skills/spacy_matcher.py
+import spacy
+from spacy.matcher import PhraseMatcher
+
+class SpaCySkillMatcher:
+    """ESCO + UK-specific skill extraction via SpaCy PhraseMatcher.
+    Drop-in replacement for Phase 1 SkillMatcher.
+    """
+
+    def __init__(self, skills_dict: dict[str, str]):
+        """skills_dict: {lowercase_pattern: canonical_name}"""
+        self.nlp = spacy.load("en_core_web_sm", disable=["ner", "parser", "lemmatizer"])
+        self._canonical_map: dict[str, str] = {}
+
+        # Layer 1: case-insensitive general skills
+        self._lower_matcher = PhraseMatcher(self.nlp.vocab, attr="LOWER")
+        # Layer 2: case-sensitive acronyms (AWS, SQL, ACCA, CIPD)
+        self._orth_matcher = PhraseMatcher(self.nlp.vocab, attr="ORTH")
+
+        lower_patterns = []
+        orth_patterns = []
+
+        for pattern_text, canonical in skills_dict.items():
+            self._canonical_map[pattern_text] = canonical
+            doc = self.nlp.make_doc(pattern_text)
+
+            if pattern_text.isupper() and len(pattern_text) <= 6:
+                orth_patterns.append(doc)
+            else:
+                lower_patterns.append(doc)
+
+        if lower_patterns:
+            self._lower_matcher.add("SKILLS_LOWER", lower_patterns)
+        if orth_patterns:
+            self._orth_matcher.add("SKILLS_ORTH", orth_patterns)
+
+    def extract(self, text: str, max_skills: int = 15) -> list[str]:
+        """Extract skills from text. Returns canonical names, deduped, max 15."""
+        doc = self.nlp(text)
+        found: dict[str, int] = {}
+
+        for matcher in [self._orth_matcher, self._lower_matcher]:
+            for match_id, start, end in matcher(doc):
+                span_text = doc[start:end].text.lower()
+                if span_text in self._canonical_map:
+                    canonical = self._canonical_map[span_text]
+                    found[canonical] = found.get(canonical, 0) + 1
+
+        ranked = sorted(found.items(), key=lambda x: x[1], reverse=True)
+        return [name for name, _ in ranked[:max_skills]]
+```
+
+**Performance:** ~5–15ms per document with 40K–60K patterns loaded. 5,000 jobs in under 2 minutes on a single CPU core. Memory: ~300–500MB including `en_core_web_sm`.
+
+**Dictionary composition:**
+
+| Source | Skills | Patterns (with aliases) | Status |
 |---|---|---|---|
-| Database + vectors | Supabase Pro + Small | **$30.00** | $25 base + $15 compute - $10 credit = $30 (2GB RAM) |
-| Pipeline compute | Modal Starter | **$0.00** | ~$4.50 usage against $30 free credit |
-| Embeddings | Gemini free tier | **$0.00** | ~30M tokens/mo within free limits |
-| Frontend hosting | Cloudflare Pages free | **$0.00** | Unlimited bandwidth, commercial OK |
-| Error tracking | Sentry Developer | **$0.00** | 5K errors/mo |
-| Analytics | PostHog free | **$0.00** | 1M events/mo |
-| Uptime monitoring | Better Stack free | **$0.00** | 10 monitors, 3-min checks |
-| Geocoding | Postcodes.io | **$0.00** | Free, no auth |
-| Domain name | Registrar | **~$1.00** | ~$12/year amortized |
-| **TOTAL** | | **~$31/mo** | |
+| ESCO v1.2.1 CSV | ~13,939 | ~25,000–30,000 | Free download |
+| SkillNER EMSI/Lightcast bundle | ~25K–32K | ~40,000 | MIT-licensed, extract from library |
+| UK-specific entries | ~300 | ~500 | Manual curation |
+| **Total (deduplicated)** | **~10K–15K canonical** | **~40K–60K patterns** | |
 
-### 7.2 Storage Projections
+**UK-specific entries (300+ additions not in ESCO):**
 
-| Component | Per job | At 200K ready | At 500K total |
-|---|---|---|---|
-| Core row data | ~3–5 KB | 0.6–1.0 GB | 1.5–2.5 GB |
-| raw_data JSONB | ~1–2 KB | 0.2–0.4 GB | 0.5–1.0 GB |
-| Embedding halfvec(768) | 1.5 KB | 0.3 GB | 0.75 GB |
-| HNSW index (~2× vectors) | ~3 KB | 0.6 GB | 1.5 GB |
-| tsvector + GIN index | ~0.5 KB | 0.1 GB | 0.25 GB |
-| Other indexes | ~0.5 KB | 0.1 GB | 0.25 GB |
-| **TOTAL** | ~10–14 KB | **~2–3 GB** | **~5–7 GB** |
+| Category | Entries |
+|---|---|
+| Education | GCSE, A-Level, BTEC, NVQ Level 1–7, City & Guilds, HNC, HND, QTS, PGCE, Foundation Degree |
+| Construction | CSCS card, SMSTS, SSSTS, CPCS, IPAF, PASMA, Gas Safe, Part P, JIB card, ECS card |
+| Security | SIA licence, SIA Door Supervision, SIA CCTV, SIA Close Protection, BS 7858 |
+| Finance | ACCA, CIMA, AAT, ACA, ICAEW, CFA, CISI, FCA regulated, PRA regulated |
+| HR / Management | CIPD Level 3/5/7, PRINCE2, APM, CMI, ILM, NEBOSH, IOSH |
+| Safeguarding | DBS check, enhanced DBS, First Aid at Work, safeguarding certificate, food hygiene Level 2/3 |
+| Health / Social | NMC registered, HCPC registered, GMC registered, GPhC, SSSC, Care Certificate |
+| Driving | Full UK driving licence, Cat C, Cat CE, HGV Class 1/2, ADR, CPC, forklift licence |
+| Legal | SRA regulated, CILEx, OISC Level 1–3, SQE1, SQE2, LPC, BPTC |
 
-Supabase Pro includes 8 GB. At 200K active + 100K expired = ~4–5 GB. Fits comfortably.
+### 3.3 Job Skills Population
 
-### 7.3 Upgrade Triggers
+**Backfill strategy:** Process all `status = 'ready'` jobs that have no entries in `job_skills`. Run as a Modal batch job.
 
-| Trigger | Action | Cost impact |
-|---|---|---|
-| Vectors exceed 300K or RAM > 1.8GB | Small → Medium | +$45/mo ($75 total) |
-| Gemini 429s block daily processing | Free → Paid ($0.15/1M) | +$4.50/mo |
-| CF Pages bundle > 3MB | Free → Workers Paid | +$5/mo |
-| Revenue justifies Vercel DX | CF Pages → Vercel Pro | +$20/mo |
+```python
+# pipeline/src/skills/populate.py
+async def populate_job_skills(batch_size: int = 500):
+    """Backfill job_skills for all ready jobs missing skill extraction."""
+    # 1. Query jobs with no job_skills entries
+    # 2. For each batch: extract skills via SpaCySkillMatcher
+    # 3. Upsert skill names into skills table (get or create)
+    # 4. Bulk insert into job_skills with confidence=1.0, is_required=True
+    # 5. Track progress via structlog
+```
+
+**Processing rate:** 500K jobs ÷ 10ms/job ÷ 1000 = ~83 minutes on single core. Run on Modal with parallelism for ~20 minutes.
+
+**Skill type classification:** Map ESCO `skillType` field:
+- `skill/competence` → `'hard'` if technical pattern matches, else `'soft'`
+- `knowledge` → `'knowledge'`
+- UK-specific entries → manually classified in dictionary build
+
+### 3.4 Materialized Views
+
+Two views (SQL in Migration 007 above):
+
+**`mv_skill_demand`:** Skill name, job count (total/30d/7d), average salary, top regions. Powers the "trending skills" and "skills analytics" features.
+
+**`mv_skill_cooccurrence`:** Pairs of skills that appear together in ≥10 jobs. Powers "related skills" recommendations.
+
+**Refresh:** Daily at 3 AM via pg_cron. `CONCURRENTLY` to avoid locking reads.
 
 ---
 
-## 8. Acceptance Criteria
+## 4. Stage 2: Advanced Deduplication (Week 6)
 
-### Stage 1: Foundation (Week 1)
+### 4.1 Three-Stage Dedup Architecture
 
-- [ ] `supabase db reset` succeeds with all 5 migrations
-- [ ] All 5 tables exist with correct columns, types, and constraints
-- [ ] All indexes created (HNSW, GIN×2, GIST, B-tree×5)
-- [ ] All 6 queues operational: `SELECT pgmq.send('parse_queue', '{}')` returns a message ID
-- [ ] `pipeline_health` view returns 14 columns with zero values
-- [ ] RLS: anon key SELECT on `status='ready'` works; SELECT on `status='raw'` returns 0 rows
-- [ ] Seed data: 4 sources inserted
-- [ ] Rollback: each `down.sql` runs without error
+Phase 1 built Stage 1 (hash-based). Phase 2 adds Stages 2 and 3.
 
-### Stage 2: Collection (Week 2)
+| Stage | Method | What it catches | Performance |
+|---|---|---|---|
+| 1 (Phase 1) | SHA-256 `content_hash` | Identical title+company+location | O(1) per job via unique constraint |
+| 2 (Phase 2) | pg_trgm fuzzy matching | Rephrased titles, company name variations | ~15ms per query with GIN index |
+| 3 (Phase 2) | MinHash/LSH | Near-duplicate descriptions at scale | ~30 min for 400K jobs on single core |
 
-- [ ] Each collector maps source JSON to `JobBase` Pydantic model without validation errors
-- [ ] Reed: fetches ≥1 page, respects 0.5s sleep, handles `totalResults` pagination
-- [ ] Adzuna: fetches ≥1 category page, extracts `latitude`/`longitude`
-- [ ] Jooble: paginates until empty results array
-- [ ] Careerjet: passes `user_ip` and `user_agent` in v4 format
-- [ ] Circuit breaker: 3 consecutive 500s → state=OPEN → 5min recovery → HALF_OPEN → success → CLOSED
-- [ ] UPSERT: re-inserting same `(source_id, external_id)` updates `date_crawled`, does not create duplicate
-- [ ] `content_hash` computed at ingestion; identical jobs have identical hashes
-- [ ] `pipeline_health.jobs_ingested_last_hour > 0` after first run
+**Expected aggregate precision: 85–95%.**
 
-### Stage 3: Processing (Week 3)
+### 4.2 pg_trgm Fuzzy Matching
 
-- [ ] Salary normalizer: all 12 patterns produce correct `salary_annual_min`/`salary_annual_max`
-- [ ] Salary sanity: values <10K or >500K are rejected (set to NULL)
-- [ ] Location normalizer: 'London' → Central London coords; 'Remote' → `location_type='remote'`, no geometry
-- [ ] Geocoding: Adzuna jobs use provided lat/lon; Reed jobs use postcodes.io
-- [ ] Category mapper: Reed IT → Technology; Adzuna `it-jobs` → Technology; unknown title → 'Other'
-- [ ] Seniority: 'Senior Python Developer' → 'Senior'; 'Data Analyst' → 'Not specified'
-- [ ] Structured summary: 6-field template generated for every job
-- [ ] Embeddings: Gemini returns 768-dim vectors; stored as `halfvec(768)` in DB
-- [ ] Re-normalization: `np.linalg.norm(vec) ≈ 1.0` for all stored vectors
-- [ ] Dedup: two jobs with same title+company+location produce same `content_hash`; second is skipped
-- [ ] Skill extraction: 'Python developer with AWS experience' extracts at least ['Python', 'AWS']
-- [ ] Full pipeline: raw job → ready job with all fields populated
-- [ ] `pipeline_health.ready_without_embedding = 0`
+**Similarity thresholds (tuned for UK job postings):**
 
-### Stage 4: Maintenance (Week 4)
+| Field | Threshold | Rationale |
+|---|---|---|
+| Title | 0.6–0.7 | Default 0.3 is far too permissive. 0.6 catches "Senior Python Developer" vs "Senior Python Dev" |
+| Company | 0.5–0.6 | Catches "Goldman Sachs International" vs "Goldman Sachs" |
+| Description | 0.4–0.5 | Only for confirmation; never as sole signal |
 
-- [ ] Expired Reed jobs (past `expirationDate`) have `status='expired'`
-- [ ] Jobs older than 45 days without explicit expiry are auto-expired
-- [ ] Archived jobs (expired >90 days) have `status='archived'`
-- [ ] `search_jobs()` returns results for keyword-only, semantic-only, and hybrid queries
-- [ ] `search_jobs()` respects all filters: location radius, min_salary, work_type, include_remote
-- [ ] `EXPLAIN ANALYZE` on `search_jobs()` shows P95 < 50ms on seeded data
-- [ ] Pipeline throughput: >500 jobs/hour through full processing chain
-- [ ] End-to-end: fetch 100 real jobs → process → embed → search returns sensible results
+**Query pattern for candidate detection:**
+
+```sql
+-- Find fuzzy duplicates for a given job
+SELECT
+    j2.id AS candidate_id,
+    similarity(j1.title, j2.title) AS title_sim,
+    similarity(j1.company_name, j2.company_name) AS company_sim,
+    ST_Distance(j1.location::geography, j2.location::geography) / 1000.0 AS distance_km,
+    compute_duplicate_score(
+        similarity(j1.title, j2.title),
+        similarity(j1.company_name, j2.company_name) > 0.5,
+        ST_Distance(j1.location::geography, j2.location::geography) / 1000.0,
+        CASE
+            WHEN j1.salary_annual_max IS NOT NULL AND j2.salary_annual_max IS NOT NULL
+            THEN 1.0 - ABS(j1.salary_annual_max - j2.salary_annual_max)
+                / GREATEST(j1.salary_annual_max, j2.salary_annual_max)
+            ELSE 0.0
+        END,
+        ABS(EXTRACT(EPOCH FROM j1.date_posted - j2.date_posted) / 86400)::INT
+    ) AS dup_score
+FROM jobs j1, jobs j2
+WHERE j1.id = $1
+  AND j2.id != j1.id
+  AND j2.status = 'ready'
+  AND j2.is_duplicate IS NOT TRUE
+  AND j1.title % j2.title                          -- GIN index scan, threshold 0.6
+  AND similarity(j1.title, j2.title) >= 0.6
+ORDER BY dup_score DESC
+LIMIT 10;
+```
+
+**Set pg_trgm threshold per-session:**
+
+```sql
+SET pg_trgm.similarity_threshold = 0.6;
+```
+
+### 4.3 Composite Duplicate Scoring
+
+**Formula (from Migration 008 SQL):**
+
+```
+score = (title_similarity × 0.35)
+      + (company_match × 0.25)
+      + (location_proximity × 0.15)
+      + (salary_overlap × 0.15)
+      + (date_proximity × 0.10)
+```
+
+**Decision threshold:** `dup_score >= 0.65` → mark as duplicate.
+
+**Duplicate resolution:** Keep the "richest" version (most non-null fields, longest description, has salary data). Set `canonical_id` on the duplicate pointing to the kept version. Set `is_duplicate = TRUE`.
+
+```python
+def pick_canonical(job_a: dict, job_b: dict) -> tuple[int, int]:
+    """Returns (canonical_id, duplicate_id). Keeps richest version."""
+    def richness(j: dict) -> int:
+        score = 0
+        score += 1 if j.get("salary_annual_max") else 0
+        score += 1 if j.get("location_city") else 0
+        score += len(j.get("description_plain", "")) // 100  # longer = richer
+        score += 1 if j.get("embedding") is not None else 0
+        return score
+
+    if richness(job_a) >= richness(job_b):
+        return job_a["id"], job_b["id"]
+    return job_b["id"], job_a["id"]
+```
+
+### 4.4 MinHash/LSH Preparation
+
+**Library:** `datasketch` with `xxhash` (faster than SHA1).
+
+**Configuration:**
+
+| Parameter | Value | Rationale |
+|---|---|---|
+| Permutations | 128 | ~0.5KB per signature |
+| Bands | 10 | LSH banding |
+| Rows per band | 12 | 10 × 12 = 120 (≈ 128 perms) |
+| Jaccard threshold | ~0.5 | Catches ~80% of pairs above this similarity |
+
+**Implementation:**
+
+```python
+# pipeline/src/dedup/minhash.py
+from datasketch import MinHash, MinHashLSH
+
+def compute_minhash(text: str, num_perm: int = 128) -> MinHash:
+    """Compute MinHash signature for a job description."""
+    m = MinHash(num_perm=num_perm, hashfunc=xxhash.xxh64_intdigest)
+    # Tokenize into 3-grams (character level for robustness)
+    for i in range(len(text) - 2):
+        m.update(text[i:i+3].encode('utf-8'))
+    return m
+
+def build_lsh_index(jobs: list[dict], threshold: float = 0.5) -> MinHashLSH:
+    """Build LSH index from job descriptions."""
+    lsh = MinHashLSH(threshold=threshold, num_perm=128)
+    for job in jobs:
+        mh = compute_minhash(job["description_plain"])
+        lsh.insert(str(job["id"]), mh)
+    return lsh
+```
+
+**Processing time:** 400K jobs in ~30 minutes on single core. Store MinHash hex in `description_hash` column for incremental updates.
+
+**Phase 2 scope:** Build the LSH index and identify candidates. Use composite scoring (§4.3) for final decision. MinHash alone is insufficient — Textkernel research confirmed that text similarity must be combined with metadata matching.
+
+---
+
+## 5. Stage 3: Salary Prediction & Company Enrichment (Week 7)
+
+### 5.1 XGBoost Salary Prediction
+
+**Training data:** Adzuna provides a `salary_is_predicted` flag. Filter to `salary_is_predicted = FALSE` AND `salary_annual_max IS NOT NULL`. Expected: ~100K+ labeled jobs after sufficient collection time.
+
+**Features:**
+
+| Feature | Encoding | Source |
+|---|---|---|
+| Job title | TF-IDF (max 500 features) | `title` column |
+| Location region | One-hot (12 UK regions) | `location_region` column |
+| Category | One-hot (~15 categories) | `category` column |
+| Employment type | Multi-hot | `employment_type` array |
+| Seniority level | Ordinal (1–5) | `seniority_level` column |
+| Extracted skills count | Integer | `job_skills` count |
+| Top 50 skills | Binary presence | `job_skills` join |
+
+**Model training:**
+
+```python
+# pipeline/src/salary/trainer.py
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, median_absolute_error
+
+def train_salary_model(features: np.ndarray, labels: np.ndarray) -> xgb.Booster:
+    """Train XGBoost salary predictor. Target: salary_annual_max."""
+    X_train, X_test, y_train, y_test = train_test_split(
+        features, labels, test_size=0.2, random_state=42
+    )
+    dtrain = xgb.DMatrix(X_train, label=y_train)
+    dtest = xgb.DMatrix(X_test, label=y_test)
+
+    params = {
+        "objective": "reg:squarederror",
+        "max_depth": 6,
+        "learning_rate": 0.1,
+        "n_estimators": 200,
+        "eval_metric": "mae",
+    }
+    model = xgb.train(
+        params, dtrain,
+        num_boost_round=200,
+        evals=[(dtest, "test")],
+        early_stopping_rounds=20,
+        verbose_eval=50
+    )
+    # Validation
+    preds = model.predict(dtest)
+    mae = mean_absolute_error(y_test, preds)
+    median_ae = median_absolute_error(y_test, preds)
+    # Log: target MAE < £5,000, median AE < £3,000
+    return model
+```
+
+**Validation criteria:**
+
+| Metric | Target | Acceptable |
+|---|---|---|
+| MAE (Mean Absolute Error) | < £5,000 | < £8,000 |
+| Median AE | < £3,000 | < £5,000 |
+| % within 20% of actual | > 70% | > 60% |
+
+**Prediction output:** Store in `salary_predicted_min`, `salary_predicted_max`, `salary_confidence`, `salary_model_version`. Set `salary_is_predicted = TRUE` for predicted values.
+
+**Confidence score:** Based on distance to nearest training examples and model variance. Buckets: HIGH (>0.8), MEDIUM (0.5–0.8), LOW (<0.5).
+
+**Re-training:** Monthly, triggered by pg_cron. Store model as serialized file on Modal volume.
+
+### 5.2 Companies House API Integration
+
+**Endpoint:** `https://api.company-information.service.gov.uk/`
+
+**Auth:** Basic Auth with API key (free, register at `https://developer.company-information.service.gov.uk/`).
+
+**Rate limit:** 600 requests per 5 minutes = 2 req/sec sustained.
+
+**Search workflow:**
+
+```python
+# pipeline/src/enrichment/companies_house.py
+import httpx
+
+COMPANIES_HOUSE_BASE = "https://api.company-information.service.gov.uk"
+
+async def search_company(name: str, api_key: str) -> dict | None:
+    """Search Companies House by company name. Returns best match."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{COMPANIES_HOUSE_BASE}/search/companies",
+            params={"q": name, "items_per_page": 5},
+            auth=(api_key, ""),  # Basic Auth: key as username, empty password
+            timeout=10.0
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+        if not items:
+            return None
+        # Return best match (first result, highest relevance)
+        return items[0]
+
+async def get_company_profile(company_number: str, api_key: str) -> dict:
+    """Get full company profile by Companies House number."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{COMPANIES_HOUSE_BASE}/company/{company_number}",
+            auth=(api_key, ""),
+            timeout=10.0
+        )
+        resp.raise_for_status()
+        return resp.json()
+```
+
+**Response parsing (key fields):**
+
+| API field | Maps to | Column |
+|---|---|---|
+| `company_number` | Companies House number | `companies.companies_house_number` |
+| `sic_codes[]` | Industry classification | `companies.sic_codes` |
+| `company_status` | Active/dissolved/etc | `companies.company_status` |
+| `date_of_creation` | Company age | `companies.date_of_creation` |
+| `registered_office_address` | Full address object | `companies.registered_address` |
+
+**SIC code → internal category mapping:** First character of 5-digit SIC code maps to section letter (A–U) via ONS standard ranges. Then section letter maps to our internal category via `sic_industry_map` table.
+
+```python
+def sic_to_section(sic_code: str) -> str:
+    """Map 5-digit SIC code to section letter (A-U)."""
+    code = int(sic_code[:2])
+    RANGES = [
+        (1, 3, 'A'), (5, 9, 'B'), (10, 33, 'C'), (35, 35, 'D'),
+        (36, 39, 'E'), (41, 43, 'F'), (45, 47, 'G'), (49, 53, 'H'),
+        (55, 56, 'I'), (58, 63, 'J'), (64, 66, 'K'), (68, 68, 'L'),
+        (69, 75, 'M'), (77, 82, 'N'), (84, 84, 'O'), (85, 85, 'P'),
+        (86, 88, 'Q'), (90, 93, 'R'), (94, 96, 'S'), (97, 98, 'T'),
+        (99, 99, 'U'),
+    ]
+    for start, end, section in RANGES:
+        if start <= code <= end:
+            return section
+    return 'S'  # default: Other Service Activities
+```
+
+**Enrichment strategy:** Process unique company names from the `companies` table where `enriched_at IS NULL`. Rate-limited to 2 req/sec. Batch overnight via Modal cron. Expected: ~10K–50K unique companies.
+
+### 5.3 Cost: Stage 3
+
+| Item | Cost | Notes |
+|---|---|---|
+| XGBoost training | $0 | Runs on Modal free tier (~5 min compute) |
+| Companies House API | $0 | Free API, no cost |
+| Model storage | $0 | Modal volume (included in free tier) |
+| scikit-learn + xgboost deps | $0 | Open source |
+
+---
+
+## 6. Stage 4: Cross-Encoder Re-ranking (Week 8)
+
+### 6.1 Re-ranking Pipeline
+
+```
+User query
+    ↓
+search_jobs_v2() returns top 50 (RRF scored)
+    ↓
+Cross-encoder scores each (query, job) pair
+    ↓
+Re-sort by cross-encoder score
+    ↓
+Return top 20
+```
+
+### 6.2 Cross-Encoder: ms-marco-MiniLM-L-6-v2
+
+| Parameter | Value |
+|---|---|
+| Model | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
+| Parameters | 22M |
+| Input | (query_text, job_title + " at " + company + ". " + description_snippet) |
+| Output | Relevance score 0–1 |
+| Speed | ~5ms per pair on CPU |
+| 50 pairs | ~250ms total |
+| Runs on | Modal (CPU, no GPU needed) |
+| Library | `sentence-transformers` |
+
+**Implementation:**
+
+```python
+# pipeline/src/search/reranker.py
+from sentence_transformers import CrossEncoder
+
+_model: CrossEncoder | None = None
+
+def get_reranker() -> CrossEncoder:
+    global _model
+    if _model is None:
+        _model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512)
+    return _model
+
+def rerank(query: str, jobs: list[dict], top_k: int = 20) -> list[dict]:
+    """Re-rank jobs using cross-encoder. Returns top_k sorted by relevance."""
+    model = get_reranker()
+    pairs = [
+        (query, f"{j['title']} at {j['company_name']}. {(j.get('description_plain') or '')[:300]}")
+        for j in jobs
+    ]
+    scores = model.predict(pairs, show_progress_bar=False)
+    for job, score in zip(jobs, scores):
+        job["rerank_score"] = float(score)
+    return sorted(jobs, key=lambda j: j["rerank_score"], reverse=True)[:top_k]
+```
+
+**Where it runs:** Modal serverless function, called from the Next.js API route via HTTP. The model stays warm in Modal's container cache (~2s cold start, then instant).
+
+**Fallback:** If Modal is down or latency exceeds 2s, return RRF results directly (graceful degradation, no re-ranking).
+
+### 6.3 User Profile Embedding
+
+**Profile template (mirrors job structured summary):**
+
+```
+Target Role: {target_role}
+Skills: {skills, comma-separated}
+Experience: {experience_text}
+Location: {preferred_location}
+Work Preference: {work_preference}
+```
+
+**Same model, same vector space:** Gemini embedding-001, 768 dimensions, stored as `halfvec(768)` in `user_profiles.profile_embedding`. Enables direct cosine similarity between user profile and job embeddings.
+
+**Profile collection:** At this phase (Phase 2), profile data is inserted via `service_role` into the `user_profiles` table. Fields: target role (text), skills (text array from skills taxonomy), experience (text), preferred location (text), work preference (text: remote/hybrid/onsite/any), minimum salary (integer). The web form for user-facing profile creation is Phase 3.
+
+**Re-embedding:** Whenever the user updates their profile, re-embed the structured template and store the new vector.
+
+### 6.4 Search Quality Verification
+
+**50+ test queries** covering:
+
+| Category | Example queries | Count |
+|---|---|---|
+| Role-based | "Python developer", "nurse", "accountant", "chef" | 10 |
+| Location-specific | "developer jobs in Manchester", "nurse London" | 10 |
+| Skill-based | "AWS cloud engineer", "CIPD qualified HR" | 10 |
+| Seniority | "senior data scientist", "junior marketing" | 5 |
+| Salary range | "£50k+ developer", "high salary finance" | 5 |
+| Remote/hybrid | "remote python", "hybrid accountant London" | 5 |
+| Edge cases | Empty query, very long query, typos, non-English | 5+ |
+
+**Metrics:** NDCG@20 comparing RRF-only vs RRF + cross-encoder. Target: ≥10% NDCG improvement with cross-encoder.
+
+---
+
+## 7. New Dependencies (Phase 2 Additions)
+
+### 7.1 pipeline/pyproject.toml additions
+
+| Package | Purpose | Phase 2 stage |
+|---|---|---|
+| `spacy>=3.7` | PhraseMatcher for skill extraction | Stage 1 |
+| `sentence-transformers>=2.2` | Cross-encoder re-ranking | Stage 4 |
+| `xgboost>=2.0` | Salary prediction | Stage 3 |
+| `scikit-learn>=1.4` | Feature engineering, train/test split, metrics | Stage 3 |
+| `datasketch>=1.6` | MinHash/LSH dedup | Stage 2 |
+| `xxhash>=3.0` | Fast hashing for MinHash | Stage 2 |
+
+**Modal image impact:** +500MB for SpaCy + en_core_web_sm + sentence-transformers. Cold start: ~5–8 seconds (up from ~2–3s). Acceptable for batch processing and warm serverless functions.
+
+### 7.2 SpaCy Model Download
+
+```python
+# In Modal image definition
+image = modal.Image.debian_slim(python_version="3.12").pip_install(
+    "spacy>=3.7", "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz",
+    # ... other deps
+)
+```
+
+---
+
+## 8. Cost Calculations
+
+### 8.1 Phase 2 Monthly Budget Delta
+
+| Item | Cost | Notes |
+|---|---|---|
+| SpaCy skill extraction | $0 | Rule-based, runs on Modal free tier |
+| pg_trgm dedup | $0 | PostgreSQL built-in extension |
+| MinHash/LSH | $0 | datasketch library, Modal compute |
+| XGBoost training | $0 | ~5 min monthly on Modal |
+| Companies House API | $0 | Free API |
+| Cross-encoder inference | $0 | ms-marco-MiniLM on Modal CPU |
+| Supabase storage delta | $0 | New tables + MVs within 8GB limit |
+| **Phase 2 delta** | **~$0/mo** | |
+| **Total (Phase 1 + 2)** | **~$31/mo** | |
+
+### 8.2 One-Time Processing Costs
+
+| Task | Cost | Time |
+|---|---|---|
+| ESCO CSV loading | $0 | ~5 min |
+| Skills dictionary build | $0 | ~4 hours manual |
+| Backfill job_skills (500K jobs) | $0 | ~20 min on Modal |
+| Fuzzy dedup scan (500K jobs) | $0 | ~2 hours on Modal |
+| MinHash/LSH build (400K jobs) | $0 | ~30 min on Modal |
+| XGBoost training (100K+ jobs) | $0 | ~5 min on Modal |
+| Companies House enrichment (50K companies) | $0 | ~7 hours at 2 req/sec |
+| Cross-encoder model download | $0 | ~200MB, one-time |
+
+---
+
+## 9. Updated search_jobs_v2() vs Phase 1 search_jobs()
+
+| Feature | search_jobs() (Phase 1) | search_jobs_v2() (Phase 2) |
+|---|---|---|
+| Return fields | 4 (id, title, company, rrf_score) | 18 (full job card data) |
+| Default match_count | 20 | 50 (for cross-encoder input) |
+| Duplicate filtering | None | `exclude_duplicates` parameter |
+| Salary filter | `min_salary` only | `min_salary` + `max_salary`, uses predicted salary as fallback |
+| Category filter | None | `category_filter` parameter |
+| Skill filter | None | `skill_filters` array, checked via junction table |
+| Re-ranking | None | Cross-encoder applied post-query |
+
+**Phase 1 `search_jobs()` is preserved** — not dropped. `search_jobs_v2()` is additive. Phase 3 UI will use v2.
+
+---
+
+## 10. Acceptance Criteria
+
+### Stage 1: Skills Extraction & Taxonomy (Week 5)
+
+- [ ] `esco_skills` table loaded with ~13,939 rows from ESCO CSV
+- [ ] `skills` table populated with ~10K–15K canonical skills
+- [ ] SpaCy PhraseMatcher extracts skills from job descriptions
+- [ ] "Python developer with AWS experience" extracts at least `['Python', 'AWS']`
+- [ ] UK-specific: "CSCS card holder with SMSTS" extracts at least `['CSCS Card', 'SMSTS']`
+- [ ] `job_skills` table populated for all `status='ready'` jobs
+- [ ] Max 15 skills per job enforced
+- [ ] `mv_skill_demand` returns rows with correct job counts
+- [ ] `mv_skill_cooccurrence` returns skill pairs with count ≥ 10
+- [ ] pg_cron refreshes both materialized views daily
+- [ ] Processing rate: ≥5,000 jobs/minute on Modal
+
+### Stage 2: Advanced Deduplication (Week 6)
+
+- [ ] pg_trgm: "Senior Python Developer" and "Senior Python Dev" flagged as candidates (similarity ≥ 0.6)
+- [ ] pg_trgm: "Goldman Sachs International" and "Goldman Sachs" match (similarity ≥ 0.5)
+- [ ] Composite score correctly combines all 5 signals with defined weights
+- [ ] `dup_score >= 0.65` marks the poorer version as `is_duplicate = TRUE`
+- [ ] `canonical_id` correctly points to the richer version
+- [ ] `search_jobs_v2()` with `exclude_duplicates=TRUE` skips marked duplicates
+- [ ] MinHash signatures computed and stored in `description_hash`
+- [ ] LSH index identifies near-duplicate candidates
+- [ ] Combined pg_trgm + MinHash + composite score achieves ≥85% precision on 100 manually reviewed pairs
+- [ ] Performance: dedup scan of 500K jobs completes in < 3 hours
+
+### Stage 3: Salary Prediction & Company Enrichment (Week 7)
+
+- [ ] XGBoost model trained on ≥50K labeled Adzuna jobs
+- [ ] MAE < £8,000 on test set (target: < £5,000)
+- [ ] Predictions stored with `salary_is_predicted = TRUE` and confidence score
+- [ ] Sanity: no predictions < £10K or > £500K
+- [ ] Companies House: search returns correct match for "Goldman Sachs"
+- [ ] SIC code "62020" correctly maps to section "J" → "Technology"
+- [ ] `companies` table enriched with SIC codes, status, date_of_creation
+- [ ] Rate limit: sustained 2 req/sec, no 429 errors
+- [ ] `salary_predicted_min`/`max` used as fallback in `search_jobs_v2()` salary filter
+
+### Stage 4: Cross-Encoder Re-ranking (Week 8)
+
+- [ ] Cross-encoder loaded and scores a (query, job) pair in < 10ms
+- [ ] 50 pairs re-ranked in < 500ms total
+- [ ] Re-ranked results measurably better than RRF-only (manual evaluation of 50 queries)
+- [ ] `user_profiles` table accepts INSERT of all fields via `service_role`
+- [ ] Profile embedding stored as halfvec(768) using Gemini
+- [ ] Profile-based search returns relevant results
+- [ ] RLS: users can only read/update own profile
+- [ ] Graceful degradation: if Modal unavailable, return RRF results without re-ranking
+- [ ] 50+ test queries pass with sensible results

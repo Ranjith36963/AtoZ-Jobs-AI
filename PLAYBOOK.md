@@ -1,4 +1,4 @@
-# AtoZ Jobs AI — Phase 1 Playbook
+# AtoZ Jobs AI — Phase 2 Playbook
 
 **How to build it. Stage-by-stage Claude Code instructions.**
 
@@ -10,18 +10,22 @@ Version: 1.0 · March 2026 · Companion to: SPEC.md (what) and GATES.md (verific
 
 ### 0.1 Prerequisites
 
-- Docker Desktop running (for Supabase local)
-- Node.js 20+ and `pnpm` installed globally
-- Python 3.12+ and `uv` installed (`pip install uv`)
-- Supabase CLI installed (`npx supabase init` or `brew install supabase`)
-- `just` installed (`brew install just` or `cargo install just`)
-- Claude Code installed and authenticated
-- GitHub repo created (empty)
-- API keys ready: Reed, Adzuna, Jooble, Careerjet, Google (Gemini)
+Everything from Phase 1 is already in place, plus:
 
-### 0.2 The Workflow (Every Task)
+- Phase 1 complete: all 102 verification items passed, `v0.1.0` tagged
+- Production pipeline running: jobs being collected, processed, embedded
+- `skills` and `job_skills` tables exist (empty, ready for Phase 2 population)
+- `search_jobs()` function working with RRF
+- ESCO CSV downloaded locally: `skills_en.csv` from `esco.ec.europa.eu/en/use-esco/download`
+- Companies House API key registered at `developer.company-information.service.gov.uk`
 
-From the Claude Code Bible — follow this religiously:
+### 0.2 New API Keys Needed
+
+| Key | Provider | Phase 2 stage | Where to store |
+|---|---|---|---|
+| `COMPANIES_HOUSE_API_KEY` | Companies House | Stage 3 | Modal secrets, .env.local |
+
+### 0.3 The Workflow (Same as Phase 1)
 
 ```
 /clear                                          ← Clean context
@@ -32,858 +36,726 @@ uv run pytest / pnpm test                       ← Tests must pass
 git add -A && git commit                        ← Conventional commit
 ```
 
-### 0.3 When to /clear and /compact
+### 0.4 When to /clear and /compact
 
 | Trigger | Action |
 |---|---|
-| Starting a new stage (Foundation → Collection → Processing → Maintenance) | `/clear` |
-| Switching between Python and TypeScript work | `/clear` |
+| Starting a new stage (Skills → Dedup → Salary → Re-ranking) | `/clear` |
+| Switching between pipeline Python and web TypeScript | `/clear` |
 | Context getting long (>50 turns) | `/compact 'Focus on [current task]'` |
 | After completing and committing a major file | `/compact` |
-| Claude starts hallucinating or repeating itself | `/clear` and restart with refined prompt |
 
 ---
 
-## 1. Stage 1: Foundation (Week 1)
+## 1. Stage 1: Skills Extraction & Taxonomy (Week 5)
 
-**Branch:** `data-phase` (created once, used for all Phase 1 stages)
+**Branch:** `search-match-phase`
 
 ```bash
-git checkout -b data-phase
+git checkout -b search-match-phase
 ```
 
-### 1.1 Create Monorepo Structure
+### 1.1 Write Migration 007
 
 **Prompt to Claude Code:**
 
 ```
-Create the following directory structure. Do not create any code files yet, only directories and config files.
-
-repo/
-├── CLAUDE.md
-├── justfile
-├── .gitignore
-├── .env.example
-├── pipeline/
-│   ├── CLAUDE.md
-│   ├── pyproject.toml
-│   └── src/
-│       ├── __init__.py
-│       ├── collectors/
-│       ├── processing/
-│       ├── embeddings/
-│       ├── skills/
-│       ├── models/
-│       ├── maintenance/
-│       └── tests/
-│           └── fixtures/
-├── web/
-│   ├── CLAUDE.md
-│   ├── package.json
-│   └── src/
-├── supabase/
-│   ├── migrations/
-│   ├── seed.sql
-│   └── config.toml
-├── docs/
-│   ├── phase-1/
-│   │   ├── SPEC.md
-│   │   ├── PLAYBOOK.md
-│   │   └── GATES.md
-│   ├── architecture.md
-│   ├── adr/
-│   └── STATUS.md
-└── .claude/
-    ├── settings.json
-    ├── agents/
-    │   ├── security-auditor.md
-    │   └── architecture-reviewer.md
-    ├── skills/
-    │   ├── testing-patterns/SKILL.md
-    │   ├── migration-safety/SKILL.md
-    │   └── api-conventions/SKILL.md
-    ├── rules/
-    │   ├── security-critical.md
-    │   └── test-standards.md
-    └── commands/
-        ├── pr-review.md
-        └── fix-issue.md
-```
-
-### 1.2 Create CLAUDE.md (Root)
-
-**CRITICAL: Apply Doc 11 authority corrections.** The CLAUDE.md content from Doc 6 has 3 stale lines that MUST be corrected:
-
-| Doc 6 says | Correct for Phase 1 (Doc 11) |
-|---|---|
-| "Instructor for structured LLM extraction, never raw prompts" | "Rule-based extraction only. No LLM. No Instructor in Phase 1." |
-| "Direct OpenAI/Anthropic SDK calls, NEVER LangChain" | "google-genai for embeddings. OpenAI as fallback only. No LLM calls." |
-| "LLM failures: retry → model cascade (Claude Sonnet → GPT-4o-mini → cached)" | "Embedding failures: retry → Gemini → OpenAI fallback → skip embedding" |
-
-**Prompt to Claude Code:**
-
-```
-Create CLAUDE.md with the following content. This is under 120 lines. Every line is deliberate.
-
-# AtoZ Jobs AI
-
-UK AI-powered job search engine. Python pipeline (uv) + Next.js web app (pnpm) + Supabase (PostgreSQL).
-
-## Commands — Pipeline (pipeline/)
-- uv run pytest: Run all Python tests
-- uv run pytest -x: Stop on first failure
-- uv run ruff check . --fix: Lint and auto-fix
-- uv run ruff format .: Format code
-- uv run mypy src/: Type check
-
-## Commands — Web (web/)
-- pnpm dev: Start dev server
-- pnpm test: Run vitest
-- pnpm lint: ESLint check
-- pnpm typecheck: TypeScript strict check
-- pnpm build: Production build
-
-## Commands — Database (root)
-- just migrate: Run supabase db push
-- just reset: Run supabase db reset (verifies full migration chain)
-- just seed: Load seed data
-- just health: Query pipeline_health view
-
-## Architecture
-See @docs/architecture.md for system design.
-See @docs/adr/ for architecture decision records.
-
-State machine: raw → parsed → normalized → [dedup gate] → geocoded → embedded → ready
-6 queues: parse_queue → normalize_queue → dedup_queue → geocode_queue → embed_queue + dead_letter_queue
-Key insight: embeddings capture semantic intent, SQL filters handle factual constraints.
-
-## Code Style — Python
-- Python 3.12+, Pydantic v2 for ALL data models
-- async/await for all I/O (httpx, database, embeddings)
-- Rule-based extraction only. No LLM. No Instructor in Phase 1.
-- google-genai for embeddings. OpenAI as fallback only. No LLM calls.
-- Type hints on every function. No Any types.
-- Docstrings on public functions only (Google style)
-
-## Code Style — TypeScript
-- TypeScript strict mode, zero `any` types
-- Named exports only, never default exports
-- tRPC for complex logic (search, recommendations), direct Supabase client for simple reads
-- Server Actions for simple form mutations ONLY
-- Zod validation at every API boundary
-
-## Testing
-- TDD: Write tests first, confirm they fail, then implement
-- Compare against pre-computed expectations, never function output
-- Include sad paths: null, empty, timeout, rate limit, malformed data, auth expiry
-- Python: pytest + pytest-asyncio + hypothesis (property-based)
-- TypeScript: vitest + @testing-library/react
-- Coverage: 80% pipeline, 60% web minimum
-
-## Database
-- ALL queries use parameterized statements (Supabase client handles this)
-- Migrations: write manually for functions/RLS/complex logic, use `supabase db diff` for DDL
-- Every migration MUST have a corresponding rollback in the down.sql file
-- NEVER modify production via Dashboard once live
-- Row-Level Security enforced on every table
-
-## Error Handling
-- Every function handling external input: handle null, empty, timeout, malformed, rate limit
-- Pipeline: retry 3x with exponential backoff, then DLQ
-- Embedding failures: retry → Gemini → OpenAI fallback → skip embedding
-- Web: Zod validation → typed error response → user-friendly message
-
-## Security
-- NEVER hardcode secrets. Always .env files (gitignored)
-- NEVER commit API keys, tokens, or passwords
-- After writing auth/input/data code, review for OWASP Top 10
-- Supabase RLS enforced on every table — no exceptions
-
-## Critical Rules
-- When uncertain, state uncertainty. Present tradeoffs, do not choose silently.
-- For complex tasks, plan before coding. Do not implement without approved plan.
-- One logical change per commit. Conventional commit messages.
-- Preserve raw_data JSONB on every job — enables reprocessing when logic improves.
-```
-
-### 1.3 Create .claude/settings.json
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(uv run pytest *)", "Bash(uv run ruff *)", "Bash(uv run mypy *)",
-      "Bash(pnpm test *)", "Bash(pnpm lint *)", "Bash(pnpm typecheck)",
-      "Bash(just *)", "Bash(git status *)", "Bash(git diff *)",
-      "Read(./pipeline/**)", "Edit(./pipeline/**)",
-      "Read(./web/**)", "Edit(./web/**)",
-      "Read(./supabase/**)", "Edit(./supabase/**)",
-      "Read(./docs/**)", "Edit(./docs/**)"
-    ],
-    "deny": [
-      "Read(./.env)", "Read(./.env.*)", "Read(./.env.local)",
-      "Read(./secrets/**)",
-      "Bash(git push --force *)", "Bash(git reset --hard *)",
-      "Bash(rm -rf *)",
-      "Bash(*drop*database*)", "Bash(*truncate*)",
-      "Bash(*migrate reset*--force*)", "Bash(*--production*)"
-    ]
-  }
-}
-```
-
-### 1.4 Create .env.example
-
-```
-# === API Keys (Pipeline) ===
-REED_API_KEY=                    # Basic Auth username, empty password
-ADZUNA_APP_ID=                   # Query param: app_id
-ADZUNA_APP_KEY=                  # Query param: app_key
-JOOBLE_API_KEY=                  # In URL path
-CAREERJET_AFFID=                 # Query param: affid
-
-# === Embeddings ===
-GOOGLE_API_KEY=                  # Gemini API (gemini-embedding-001)
-
-# === Database ===
-SUPABASE_URL=                    # https://<ref>.supabase.co
-SUPABASE_ANON_KEY=               # Public (browser, RLS enforced)
-SUPABASE_SERVICE_ROLE_KEY=       # Private (server-only, NEVER browser)
-DATABASE_URL=                    # Direct PostgreSQL connection
-
-# === Deployment ===
-MODAL_TOKEN_ID=
-MODAL_TOKEN_SECRET=
-
-# === Monitoring ===
-SENTRY_DSN=                      # Error tracking
-NEXT_PUBLIC_POSTHOG_API_KEY=     # Product analytics (browser-safe)
-```
-
-### 1.5 Create justfile
-
-```just
-# AtoZ Jobs AI — unified commands
-
-# === Development ===
-dev-pipeline:
-    cd pipeline && uv run python -m src.main
-
-dev-web:
-    cd web && pnpm dev
-
-# === Testing ===
-test:
-    cd pipeline && uv run pytest
-    cd web && pnpm test
-
-test-pipeline:
-    cd pipeline && uv run pytest -x --cov=src --cov-fail-under=80
-
-test-web:
-    cd web && pnpm test -- --coverage
-
-# === Linting ===
-lint:
-    cd pipeline && uv run ruff check . --fix && uv run ruff format .
-    cd web && pnpm lint
-
-typecheck:
-    cd pipeline && uv run mypy src/
-    cd web && pnpm typecheck
-
-# === Database ===
-migrate:
-    supabase db push
-
-reset:
-    supabase db reset
-
-seed:
-    supabase db reset
-    psql $DATABASE_URL -f supabase/seed.sql
-
-seed-dev:
-    just seed
-    cd pipeline && uv run python -m src.tests.seed_jobs
-
-seed-perf:
-    just seed
-    cd pipeline && uv run python -m src.tests.seed_bulk
-
-health:
-    psql $DATABASE_URL -c "SELECT * FROM pipeline_health;"
-
-migrate-rollback:
-    @echo "Apply the most recent down.sql manually against local DB"
-
-# === Deployment ===
-deploy-pipeline:
-    cd pipeline && modal deploy src/modal_app.py
-
-deploy-web:
-    cd web && pnpm build
-```
-
-### 1.6 Create pyproject.toml
-
-```
-[project]
-name = "atoz-jobs-pipeline"
-version = "0.1.0"
-requires-python = ">=3.12"
-dependencies = [
-    "httpx>=0.28.1",
-    "pydantic>=2.12",
-    "google-genai>=1.0",
-    "structlog>=24.0",
-    "numpy>=1.26",
-    "supabase>=2.0",
-    "beautifulsoup4>=4.12",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-    "pytest-cov>=6.0",
-    "hypothesis>=6.0",
-    "ruff>=0.8",
-    "mypy>=1.13",
-    "faker>=33.0",
-]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["src/tests"]
-
-[tool.ruff]
-target-version = "py312"
-
-[tool.mypy]
-python_version = "3.12"
-strict = true
-```
-
-### 1.7 Initialize Supabase and Write Migrations
-
-**Prompt to Claude Code:**
-
-```
-Initialize Supabase local dev:
-  supabase init
-  supabase start
-
-Then write 5 migrations as specified in SPEC.md §1.1–1.5.
-Each migration gets up.sql AND down.sql:
-
-  supabase/migrations/
-    20260301000001_extensions/up.sql + down.sql
-    20260301000002_core_tables/up.sql + down.sql
-    20260301000003_indexes/up.sql + down.sql
-    20260301000004_queues_cron_health/up.sql + down.sql
-    20260301000005_rls_policies/up.sql + down.sql
-
-Copy the exact SQL from SPEC.md. Do NOT improvise.
-After writing, run: supabase db reset
-It must complete with zero errors.
-```
-
-**IMPORTANT:** Supabase CLI expects migrations as single files at `supabase/migrations/TIMESTAMP_name.sql`. The `up.sql` / `down.sql` convention means: commit the up.sql content as the migration file, and keep the down.sql alongside it for rollback reference. Test rollback by running down.sql manually on local.
-
-### 1.8 Write seed.sql
-
-```
-Write supabase/seed.sql with Tier 1 reference data from SPEC.md §1.6:
-- 4 sources (reed, adzuna, jooble, careerjet)
-- 11 internal categories
-- ~100 UK cities with lat/lon coordinates
-
-Run: supabase db reset (which loads seed.sql automatically)
-Verify: SELECT count(*) FROM sources; → 4
-```
-
-### 1.9 Verify and Merge
-
-```bash
-supabase db reset                     # Full migration chain
-just health                           # pipeline_health view returns 14 columns
-git add -A
-git commit -m "feat(foundation): migrations, CLAUDE.md, .claude/, seed data"
-```
-
-**`/clear` — Start fresh for Stage 2. Stay on `data-phase`.**
-
----
-
-## 2. Stage 2: Collection (Week 2)
-
-**Branch:** `data-phase` (continuing from Stage 1)
-
-### 2.1 TDD: Write Tests First
-
-**Prompt to Claude Code:**
-
-```
-Write tests FIRST for all 4 collectors. Tests must FAIL initially.
-Reference SPEC.md §2.1–2.4 for exact API contracts.
-
-Create these test files:
-  pipeline/src/tests/test_reed_collector.py
-  pipeline/src/tests/test_adzuna_collector.py
-  pipeline/src/tests/test_jooble_collector.py
-  pipeline/src/tests/test_careerjet_collector.py
-  pipeline/src/tests/test_circuit_breaker.py
-
-For each collector, test:
-1. Maps source JSON to JobBase Pydantic model correctly (unit)
-2. Contract test with mock API response from tests/fixtures/{source}_response.json
-3. Edge cases: empty results, 429 rate limit, 500 server error, timeout, malformed JSON
-4. Pagination boundary: exactly max results per page — is there a next page?
-5. content_hash is computed and stable for identical inputs
-
-Save real API response samples to tests/fixtures/ for contract tests.
-Use httpx.MockTransport for mocking.
-
-Run: uv run pytest — all tests should FAIL.
-```
-
-### 2.2 Create Pydantic Models
-
-**Prompt to Claude Code:**
-
-```
-Create pipeline/src/models/job.py with the JobBase Pydantic model
-and source adapters exactly as specified in the project docs.
-
-JobBase fields: source_name, external_id, source_url, title, description,
-description_plain, company_name, location_raw, latitude, longitude,
-salary_min, salary_max, salary_raw, salary_period, salary_currency,
-salary_is_predicted, employment_type (list[str]), contract_type,
-date_posted, date_expires, category_raw, raw_data (dict).
-
-@computed_field content_hash: SHA-256 of lowercase(title|company|location).
-
-@field_validator for not_empty on title, description, company_name.
-@field_validator for salary_sanity: reject < 0 or > 1,000,000.
-
-Then create 4 adapters: ReedJobAdapter, AdzunaJobAdapter,
-JoobleJobAdapter, CareerjetJobAdapter.
-
-Each adapter has a static to_job_base(data: dict) -> JobBase method.
-Map source-specific field names to the universal schema.
-See SPEC.md §2.1–2.4 for exact field mappings.
-```
-
-### 2.3 Build Collectors
-
-**Prompt to Claude Code (one collector at a time):**
-
-```
-Build pipeline/src/collectors/reed.py
-
-Requirements from SPEC.md §2.1:
-- Base URL: https://www.reed.co.uk/api/1.0/search
-- Auth: Basic Auth with API key as username, empty password
-- Rate limit: max 2 req/sec (0.5s sleep between requests)
-- Category sweep: iterate Reed sectors with postedWithin=1
-- Pagination: resultsToTake=100, resultsToSkip for offset
-- Use ReedJobAdapter.to_job_base() for each result
-- UPSERT into Supabase via service_role client
-- Circuit breaker: 3 failures → OPEN, 300s recovery
-
-After building, run: uv run pytest src/tests/test_reed_collector.py
-All tests must PASS.
-```
-
-Repeat for Adzuna, Jooble, Careerjet. Key differences per source:
-
-**Adzuna:** Extract `latitude`/`longitude` directly from response. `salary_is_predicted` flag. Category via `category.tag`. 50 results/page. 1s sleep.
-
-**Jooble:** POST request with API key in URL path. No `totalResults` — paginate until empty. Keyword sweep instead of category sweep. 1s sleep.
-
-**Careerjet:** GET request to v4 endpoint. `affid`, `user_ip`, `user_agent` required. Use `httpx` directly (Python 2 library deprecated). 1s sleep.
-
-### 2.4 Build Circuit Breaker
-
-```
-Build pipeline/src/collectors/circuit_breaker.py
-
-3 states: CLOSED → OPEN → HALF_OPEN
-failure_threshold = 3
-recovery_timeout = 300 seconds
-Failures: httpx.TimeoutError, HTTPStatusError (5xx), connection errors
-429 does NOT trip — triggers Retry-After backoff instead.
-```
-
-### 2.5 Build Error Classes
-
-```
-Create pipeline/src/models/errors.py with 7 error types from SPEC.md:
-- ValidationError (retry=False)
-- RateLimitError (retry=True, max 3, backoff=Retry-After header)
-- TimeoutError (retry=True, max 3, backoff=2^n seconds)
-- ParseError (retry=False, alert if >5% of source)
-- EmbeddingError (retry=True, max 3, cascade to fallback)
-- GeocodingError (retry=True, max 2, fallback to city table)
-- DuplicateError (retry=False, skip silently)
-```
-
-### 2.6 Create Modal App
-
-**Prompt to Claude Code:**
-
-```
-Create pipeline/src/modal_app.py with 7 scheduled functions.
-Exact spec from Doc 9:
-
-app = modal.App("atoz-jobs-pipeline")
-
-Image: debian_slim(python_version="3.12") + 7 pip packages:
-httpx, pydantic, google-genai, structlog, numpy, supabase, beautifulsoup4
-
-Secrets: modal.Secret.from_name("atoz-env")
-
-Functions:
-1. fetch_reed:     Cron("*/30 * * * *")
-2. fetch_adzuna:   Cron("0 * * * *")
-3. fetch_jooble:   Cron("0 */2 * * *")
-4. fetch_careerjet: Cron("30 */2 * * *")
-5. process_queues: Cron("*/15 * * * *")
-6. daily_maintenance: Cron("0 3 * * *")
-7. monthly_reindex: Cron("0 3 1 * *")
-
-NOTE: Modal Starter allows 5 deployed crons. Consolidate:
-- Combine fetch_jooble + fetch_careerjet into one function (fetch_aggregators)
-- That gives: fetch_reed, fetch_adzuna, fetch_aggregators, process_queues, daily_maintenance = 5
-- monthly_reindex can be triggered inside daily_maintenance on day 1.
-```
-
-### 2.7 Verify and Merge
-
-```bash
-uv run pytest --cov=src/collectors --cov-fail-under=85
-uv run ruff check . && uv run mypy src/
-git add -A
-git commit -m "feat(pipeline): 4 collectors with circuit breaker and Modal deploy"
-```
-
-**`/clear` — Start fresh for Stage 3. Stay on `data-phase`.**
-
----
-
-## 3. Stage 3: Processing (Week 3)
-
-**Branch:** `data-phase` (continuing from Stage 2)
-
-### 3.1 TDD: Write Tests First
-
-**Prompt to Claude Code:**
-
-```
-Write tests FIRST for all processors. Tests must FAIL initially.
-
-Files:
-  pipeline/src/tests/test_salary_normalizer.py
-  pipeline/src/tests/test_location_normalizer.py
-  pipeline/src/tests/test_category_mapper.py
-  pipeline/src/tests/test_seniority.py
-  pipeline/src/tests/test_structured_summary.py
-  pipeline/src/tests/test_skill_extractor.py
-  pipeline/src/tests/test_embeddings.py
-  pipeline/src/tests/test_dedup.py
-
-Salary tests: all 12 patterns from SPEC.md §3.3.
-  "£25,000 - £30,000" → min=25000, max=30000
-  "£300 per day" → annual_min=75600, annual_max=75600 (252 days)
-  "£15-£20 per hour" → annual range using 1950 hours
-  "Competitive" → NULL, NULL
-  Sanity: reject < 10000 or > 500000
-
-Location tests: all 10 cases from SPEC.md §3.4.
-  "London" → city=London, region=Greater London, Central London coords
-  "Remote" → location_type=remote, no geometry
-  "Hybrid - Leeds" → location_type=hybrid, geocode Leeds
-
-Category tests:
-  Reed "IT & Telecoms" → "Technology"
-  Adzuna "it-jobs" → "Technology"
-  Title "Senior Python Developer" → "Technology" (keyword inference)
-  Title "Executive Chef" → "Hospitality"
-  Title "Office Manager" → "Other" (no match)
-
-Seniority tests:
-  "Junior Python Developer" → "Junior"
-  "Senior Data Engineer" → "Senior"
-  "Head of Engineering" → "Executive"
-  "Data Analyst" → "Not specified"
-
-Summary tests: verify 6-field template output (NO Summary field, NO Requirements field)
-
-Skill tests:
-  "Python developer with AWS experience" → extracts at least ['Python', 'AWS']
-
-Embedding tests: mock Gemini API, verify 768-dim output, verify re-normalization.
-
-Dedup tests: same title+company+location → same hash → second is skipped.
-
-Use hypothesis @given(st.text()) for salary parser — must never raise unhandled exception.
-
-Run: uv run pytest — all new tests should FAIL.
-```
-
-### 3.2 Build Processors (Order Matters)
-
-Build in this exact order — each depends on the previous:
-
-**3.2.1 Salary Normalizer**
-
-```
-Build pipeline/src/processing/salary.py
-
-Constants: UK_WORKING_DAYS_PER_YEAR = 252, UK_WORKING_HOURS_PER_YEAR = 1950, UK_MONTHS_PER_YEAR = 12
-12 regex patterns from SPEC.md §3.3.
-Priority: structured API fields first → parse salary_raw text → sanity check (10K–500K).
-Run tests: uv run pytest src/tests/test_salary_normalizer.py
-```
-
-**3.2.2 Location Normalizer**
-
-```
-Build pipeline/src/processing/location.py
-
-10 cases from SPEC.md §3.4.
-Geocoding pipeline: Adzuna lat/lon → extract UK postcode → postcodes.io bulk → city table → fallback.
-postcodes.io: POST /postcodes, batch of 100, 200ms delay, max 3 retries.
-Run tests: uv run pytest src/tests/test_location_normalizer.py
-```
-
-**3.2.3 Category Mapper**
-
-```
-Build pipeline/src/processing/category.py
-
-Reed → internal mapping table (11 categories).
-Adzuna → internal mapping table.
-Jooble/Careerjet → title keyword inference with pre-compiled regex patterns.
-~50 keywords across 10 categories. Default: 'Other'.
-Run tests: uv run pytest src/tests/test_category_mapper.py
-```
-
-**3.2.4 Seniority Extractor**
-
-```
-Build pipeline/src/processing/seniority.py
-
-5 regex patterns against job title. Default: 'Not specified'.
-Run tests: uv run pytest src/tests/test_seniority.py
-```
-
-**3.2.5 Structured Summary Builder**
-
-```
-Build pipeline/src/processing/summary.py
-
-6-field template from SPEC.md §3.7. NO Summary field. NO Requirements field. NO LLM.
-All fields are rule-based. Input: normalized job dict. Output: text string for embedding.
-Run tests: uv run pytest src/tests/test_structured_summary.py
-```
-
-**3.2.6 Skill Extractor**
-
-```
-Build pipeline/src/skills/extractor.py and pipeline/src/skills/dictionary.py
-
-dictionary.py: placeholder SKILLS_DICT with ~100 common skills for now.
-  Full ESCO + SkillNER merge is a separate ~4 hour task (see SPEC.md §3.8).
-  Start with: Python, JavaScript, React, AWS, SQL, Docker, Kubernetes,
-  Project Management, ACCA, CIMA, CSCS, NMC, CIPD, DBS check, etc.
-
-extractor.py: tokenize description_plain, case-insensitive lookup against dict,
-  order by frequency, cap at 15 skills, confidence=1.0 for exact matches.
-Run tests: uv run pytest src/tests/test_skill_extractor.py
-```
-
-**3.2.7 Embedding Pipeline**
-
-```
-Build pipeline/src/embeddings/embed.py and pipeline/src/embeddings/fallback.py
-
-embed.py: exact code from SPEC.md §4.2 (Gemini embedding-001).
-fallback.py: OpenAI text-embedding-3-small, lazy init, 768 dims.
-Fallback trigger: >10% Gemini error rate over 1 hour.
-Run tests: uv run pytest src/tests/test_embeddings.py
-```
-
-**3.2.8 Deduplication**
-
-```
-Build pipeline/src/processing/dedup.py
-
-content_hash check: if hash exists in DB, skip (DuplicateError).
-UPSERT pattern from SPEC.md: ON CONFLICT (source_id, external_id)
-  DO UPDATE SET ... WHERE jobs.content_hash != EXCLUDED.content_hash.
-Run tests: uv run pytest src/tests/test_dedup.py
-```
-
-### 3.3 Wire Up Queue Runner
-
-```
-Build pipeline/src/processing/queue_runner.py
-
-async def run_all_queues(batch_size=500):
-    Read from parse_queue → run parser → enqueue to normalize_queue
-    Read from normalize_queue → run normalizers → enqueue to dedup_queue
-    Read from dedup_queue → run dedup check → enqueue to geocode_queue (if unique)
-    Read from geocode_queue → run geocoder → enqueue to embed_queue
-    Read from embed_queue → build summary → embed → update status to 'ready'
-
-Each stage: read batch from pgmq, process, update job status, enqueue next.
-On failure: increment retry_count, log last_error, if retry_count >= 3 → DLQ.
-```
-
-### 3.4 Verify and Merge
-
-```bash
-uv run pytest --cov=src/processing --cov-fail-under=90
-uv run pytest --cov=src/embeddings --cov-fail-under=85
-uv run ruff check . && uv run mypy src/
-git add -A
-git commit -m "feat(pipeline): salary, location, category, skills, embeddings, dedup, queue runner"
-```
-
-**`/clear` — Start fresh for Stage 4. Stay on `data-phase`.**
-
----
-
-## 4. Stage 4: Maintenance + Verification (Week 4)
-
-**Branch:** `data-phase` (continuing from Stage 3)
-
-### 4.1 Build Expiry Detection
-
-```
-Build pipeline/src/maintenance/expiry.py
-
-Source-specific logic from SPEC.md §6:
-  Reed: use expirationDate field (provided in API response)
-  Adzuna: 45 days from date_posted (no expiry field)
-  Jooble/Careerjet: 30 days from date_posted (no expiry field)
-
-Re-verification: jobs disappearing from API for 2 consecutive fetch cycles → mark expired.
-Archival: expired > 90 days → status='archived'. Hard delete: archived > 180 days.
-```
-
-### 4.2 Build DLQ Retry
-
-```
-Build pipeline/src/maintenance/dlq.py
-
-Read from dead_letter_queue where enqueued > 6 hours ago.
-Route back to original queue based on msg->>'failed_stage'.
-Max 5 total retries. Alert if >5% of source enters DLQ.
-```
-
-### 4.3 Build Health Logger
-
-```
-Build pipeline/src/maintenance/health.py
-
-Query pipeline_health view. Log all 14 metrics via structlog.
-Check alert conditions:
-  jobs_ingested_last_hour = 0 for 3 consecutive hours → alert
-  jobs_in_dlq > 100 → alert
-  ready_without_embedding > 0 → alert
-```
-
-### 4.4 Create search_jobs() Migration
-
-```
-Write migration 006: CREATE OR REPLACE FUNCTION search_jobs(...)
-Exact SQL from SPEC.md §5. Include the cosine distance comment.
-Write corresponding down.sql: DROP FUNCTION search_jobs;
+Write supabase/migrations/007_skills_taxonomy/up.sql and down.sql.
+
+Exact SQL from SPEC.md §2.1. Creates:
+- esco_skills reference table
+- Adds source + aliases columns to skills table
+- mv_skill_demand materialized view
+- mv_skill_cooccurrence materialized view
+- pg_cron schedules for daily MV refresh at 3 AM
 
 Run: supabase db reset
-Verify: SELECT * FROM search_jobs('python developer'); returns no error (empty result on empty DB is OK).
+Verify: All tables and views exist. Cron jobs scheduled.
 ```
 
-### 4.5 End-to-End Verification
+### 1.2 Build ESCO Loader
 
-**This is the moment of truth. Run the full pipeline locally:**
+**Prompt to Claude Code:**
 
 ```
-1. supabase db reset && just seed-dev  (loads seed data with 1K synthetic jobs)
-2. modal run src/modal_app.py::fetch_reed  (fetch real jobs from Reed)
-3. modal run src/modal_app.py::process_queues  (process through all stages)
-4. Wait 2-3 minutes for embeddings to complete
-5. just health  (verify pipeline_health shows jobs_ingested > 0, ready > 0)
-6. Run 10 test queries from GATES.md against local DB
-7. Every query must return results or handle gracefully
+Build pipeline/src/skills/esco_loader.py
+
+TDD: Write test first in tests/test_esco_loader.py.
+
+Test cases:
+1. load_esco_csv() parses skills_en.csv fixture (10-row sample) correctly
+2. Each row extracts: concept_uri, preferred_label, alt_labels (newline-separated), skill_type
+3. Alt labels with length <= 2 are filtered out
+4. Returns dict keyed by concept_uri
+
+Then implement: exact code pattern from SPEC.md §3.1.
+The CSV file path will be provided as argument (downloaded separately).
+
+Run tests: uv run pytest tests/test_esco_loader.py
 ```
 
-### 4.6 Verify and Merge
+### 1.3 Build Skill Dictionary
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/skills/dictionary_builder.py
+
+This builds the combined skill dictionary from 3 sources:
+1. ESCO CSV (13,939 skills + aliases)
+2. UK-specific entries (~300, hardcoded from SPEC.md §3.2 table)
+3. SkillNER EMSI/Lightcast seed data (extract from skillNer package if available, else skip)
+
+Output: dict[str, str] mapping lowercase pattern → canonical name.
+Expected size: ~10K-15K canonical skills, ~40K-60K patterns.
+
+Write build_dictionary() function that merges all sources, deduplicates by lowercase key.
+Write tests: verify ESCO patterns present, UK-specific entries present, dedup works.
+
+Run tests: uv run pytest tests/test_dictionary_builder.py
+```
+
+### 1.4 Build SpaCy PhraseMatcher
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/skills/spacy_matcher.py — exact code from SPEC.md §3.2.
+
+This is the Phase 2 upgrade from Phase 1's regex SkillMatcher.
+MUST implement the same interface: extract(text, max_skills=15) -> list[str]
+
+Two-layer PhraseMatcher:
+- Layer 1: attr="LOWER" for general skills (case-insensitive)
+- Layer 2: attr="ORTH" for acronyms (AWS, SQL, ACCA, CIPD — uppercase, ≤6 chars)
+
+TDD tests in tests/test_spacy_matcher.py:
+1. "Python developer with AWS experience" → at least ['Python', 'AWS']
+2. "CSCS card holder with SMSTS certification" → at least ['CSCS Card', 'SMSTS']
+3. "NMC registered nurse with enhanced DBS" → at least ['NMC Registered', 'DBS Check']
+4. "Project management using PRINCE2 methodology" → at least ['Project Management', 'PRINCE2']
+5. Max 15 skills enforced
+6. Empty string returns []
+7. Deduplication: repeated mentions don't create duplicate entries
+
+Run tests: uv run pytest tests/test_spacy_matcher.py
+```
+
+### 1.5 Build Job Skills Populator
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/skills/populate.py
+
+Backfills job_skills for all ready jobs missing skill extraction.
+
+Logic:
+1. Query jobs WHERE status='ready' AND NOT EXISTS (SELECT 1 FROM job_skills WHERE job_id = jobs.id)
+2. Batch by 500
+3. For each job: extract skills via SpaCySkillMatcher
+4. For each skill: upsert into skills table (get or create by name)
+5. Insert into job_skills with confidence=1.0, is_required=TRUE
+6. Log progress via structlog
+
+TDD tests in tests/test_populate.py:
+1. Single job → skills extracted and inserted into job_skills
+2. Skill already in skills table → reuses existing skill_id
+3. Job already has job_skills entries → skipped
+4. Batch processing: 10 jobs processed correctly
+
+Run tests: uv run pytest tests/test_populate.py
+```
+
+### 1.6 Seed ESCO Data and Run Backfill
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/skills/seed_esco.py
+
+Script to:
+1. Load ESCO CSV via esco_loader
+2. Bulk insert into esco_skills table (13,939 rows)
+3. Build combined dictionary via dictionary_builder
+4. Seed skills table with canonical skills
+5. Log counts via structlog
+
+Write a Modal function to run this + the backfill:
+  modal run src/modal_app.py::seed_esco
+  modal run src/modal_app.py::backfill_job_skills
+```
+
+### 1.7 Update Modal Image
+
+**Prompt to Claude Code:**
+
+```
+Update pipeline/src/modal_app.py Modal image definition.
+
+Add to pip_install:
+- spacy>=3.7
+- en-core-web-sm model (install via URL: https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz)
+
+Add new Modal functions:
+- seed_esco: one-time ESCO data loading
+- backfill_job_skills: batch skills extraction for existing jobs
+- (keep all Phase 1 functions unchanged)
+
+Expected image size increase: ~500MB. Cold start: ~5-8s (was ~2-3s).
+```
+
+### 1.8 Verify and Merge
+
+```bash
+uv run pytest --cov=src/skills --cov-fail-under=85
+uv run ruff check . && uv run mypy src/
+git add -A
+git commit -m "feat(skills): SpaCy PhraseMatcher, ESCO taxonomy, job_skills backfill, materialized views"
+git tag v0.2.0-skills
+```
+
+**`/clear` — Start fresh for Stage 2.**
+
+---
+
+## 2. Stage 2: Advanced Deduplication (Week 6)
+
+**Branch:** `search-match-phase` (continue on same branch)
+
+```bash
+git checkout search-match-phase
+```
+
+### 2.1 Write Migration 008
+
+**Prompt to Claude Code:**
+
+```
+Write supabase/migrations/008_advanced_dedup/up.sql and down.sql.
+
+Exact SQL from SPEC.md §2.2. Creates:
+- canonical_id, is_duplicate, duplicate_score, description_hash columns on jobs
+- GIN trigram index on company_name
+- B-tree index on canonical_id
+- Partial index on ready + not duplicate
+- compute_duplicate_score() SQL function
+
+Run: supabase db reset
+Verify: New columns exist. compute_duplicate_score(0.7, true, 3.0, 0.8, 5) returns expected value.
+```
+
+### 2.2 Build pg_trgm Fuzzy Matcher
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/dedup/fuzzy_matcher.py
+
+Implements fuzzy duplicate detection using pg_trgm.
+
+find_fuzzy_candidates(job_id: int, db_client) -> list[dict]:
+  1. SET pg_trgm.similarity_threshold = 0.6
+  2. Query candidates where title similarity >= 0.6
+  3. For each candidate, compute full composite score via compute_duplicate_score()
+  4. Return candidates with dup_score >= 0.65
+
+mark_duplicate(duplicate_id: int, canonical_id: int, score: float, db_client):
+  1. Set is_duplicate = TRUE, canonical_id, duplicate_score on the duplicate
+  2. Keep canonical version unchanged
+
+pick_canonical(job_a: dict, job_b: dict) -> tuple[int, int]:
+  Exact logic from SPEC.md §4.3. Returns (canonical_id, duplicate_id).
+
+TDD tests in tests/test_fuzzy_matcher.py:
+1. Identical titles → flagged as candidate
+2. "Senior Python Developer" vs "Senior Python Dev" → similarity > 0.6
+3. Completely different jobs → not flagged
+4. pick_canonical keeps job with more non-null fields
+5. Composite score weights are correct (0.35 + 0.25 + 0.15 + 0.15 + 0.10 = 1.0)
+
+Run tests: uv run pytest tests/test_fuzzy_matcher.py
+```
+
+### 2.3 Build MinHash/LSH Module
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/dedup/minhash.py
+
+Implements near-duplicate detection at scale using MinHash/LSH.
+
+compute_minhash(text: str, num_perm: int = 128) -> MinHash
+  Uses xxhash, 3-character grams. Exact code from SPEC.md §4.4.
+
+build_lsh_index(jobs: list[dict], threshold: float = 0.5) -> MinHashLSH
+  Builds index from job descriptions.
+
+find_lsh_candidates(lsh: MinHashLSH, job_id: str, minhash: MinHash) -> list[str]
+  Returns candidate job IDs from LSH query.
+
+TDD tests in tests/test_minhash.py:
+1. Identical texts → MinHash Jaccard ≈ 1.0
+2. Similar texts (same content, different formatting) → Jaccard > 0.5
+3. Completely different texts → Jaccard < 0.3
+4. LSH index returns correct candidates for a near-duplicate
+5. 3-character gram tokenization works on short and long texts
+
+Run tests: uv run pytest tests/test_minhash.py
+```
+
+### 2.4 Build Dedup Orchestrator
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/dedup/orchestrator.py
+
+Combines all 3 dedup stages into a single pipeline:
+
+run_advanced_dedup(batch_size: int = 1000):
+  1. Query all ready, non-duplicate jobs
+  2. Stage 1: Skip (already done in Phase 1 via content_hash)
+  3. Stage 2: For each job, find pg_trgm fuzzy candidates
+  4. Stage 3: Build MinHash/LSH index, find near-duplicate candidates
+  5. For all candidates from stages 2+3: compute composite score
+  6. Mark duplicates where score >= 0.65
+  7. Log: total scanned, duplicates found, precision estimate
+
+Add Modal function: backfill_dedup
+Expected runtime: ~2-3 hours for 500K jobs.
+
+Run tests: uv run pytest tests/test_dedup_orchestrator.py
+```
+
+### 2.5 Update search_jobs to Exclude Duplicates
+
+**Prompt to Claude Code:**
+
+```
+The search_jobs_v2() function is in Migration 010.
+For now, verify that the existing search_jobs() still works.
+The duplicate exclusion will come with Migration 010 in Stage 4.
+
+For Stage 2, just ensure:
+1. is_duplicate column is populated correctly
+2. canonical_id references are valid
+3. Manual query: SELECT count(*) FROM jobs WHERE is_duplicate = TRUE returns > 0 after dedup run
+```
+
+### 2.6 Verify and Merge
+
+```bash
+uv run pytest --cov=src/dedup --cov-fail-under=85
+uv run ruff check . && uv run mypy src/
+git add -A
+git commit -m "feat(dedup): pg_trgm fuzzy matching, MinHash/LSH, composite scoring, dedup orchestrator"
+git tag v0.2.0-dedup
+```
+
+**`/clear` — Start fresh for Stage 3.**
+
+---
+
+## 3. Stage 3: Salary Prediction & Company Enrichment (Week 7)
+
+**Branch:** `search-match-phase` (continue on same branch)
+
+```bash
+git checkout search-match-phase
+```
+
+### 3.1 Write Migration 009
+
+**Prompt to Claude Code:**
+
+```
+Write supabase/migrations/009_salary_company/up.sql and down.sql.
+
+Exact SQL from SPEC.md §2.3. Creates:
+- salary_predicted_min/max, salary_confidence, salary_model_version on jobs
+- companies_house_number, sic_codes, company_status, date_of_creation, registered_address, enriched_at on companies
+- sic_industry_map reference table with all 21 SIC sections seeded
+
+Run: supabase db reset
+Verify: New columns exist. sic_industry_map has 21 rows.
+```
+
+### 3.2 Build Feature Engineering Pipeline
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/salary/features.py
+
+Extract features from jobs for salary prediction.
+
+build_features(jobs: list[dict]) -> tuple[np.ndarray, np.ndarray]:
+  Returns (feature_matrix, salary_labels).
+
+  Features (from SPEC.md §5.1):
+  - TF-IDF of job title (max 500 features)
+  - One-hot location region (12 UK regions)
+  - One-hot category (~15 categories)
+  - Multi-hot employment type
+  - Ordinal seniority (Junior=1, Mid=2, Senior=3, Lead=4, Executive=5)
+  - Skill count (integer)
+  - Top 50 skills binary presence
+
+  Labels: salary_annual_max (only jobs where salary_is_predicted = FALSE)
+
+TDD tests in tests/test_salary_features.py:
+1. TF-IDF produces correct feature count
+2. One-hot encoding handles all 12 regions
+3. Missing seniority → encoded as 0
+4. Jobs without salary excluded from labels
+5. Feature matrix shape matches expected dimensions
+
+Run tests: uv run pytest tests/test_salary_features.py
+```
+
+### 3.3 Build Salary Trainer
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/salary/trainer.py — exact code pattern from SPEC.md §5.1.
+
+train_salary_model(features, labels) -> xgb.Booster
+  80/20 train/test split, random_state=42.
+  XGBoost with max_depth=6, learning_rate=0.1, 200 rounds, early stopping 20.
+  Log MAE and median AE.
+  Validation: MAE < £8,000 target, < £5,000 stretch goal.
+
+predict_salary(model, features) -> list[dict]:
+  Returns [{predicted_min, predicted_max, confidence}] for each job.
+  predicted_min = prediction * 0.9 (10% lower bound)
+  predicted_max = prediction * 1.1 (10% upper bound)
+  confidence: HIGH/MEDIUM/LOW based on model uncertainty
+
+save_model(model, path) and load_model(path) for persistence.
+
+TDD tests in tests/test_salary_trainer.py:
+1. Model trains without error on synthetic data
+2. Predictions are within sane range (£10K–£500K)
+3. MAE computed correctly
+4. Model save/load round-trips correctly
+
+Run tests: uv run pytest tests/test_salary_trainer.py
+```
+
+### 3.4 Build Companies House Client
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/enrichment/companies_house.py — exact code from SPEC.md §5.2.
+
+search_company(name, api_key) -> dict | None
+  GET /search/companies?q={name}&items_per_page=5
+  Basic Auth: api_key as username, empty password
+  Returns best match or None
+
+get_company_profile(company_number, api_key) -> dict
+  GET /company/{company_number}
+  Returns full profile
+
+sic_to_section(sic_code: str) -> str
+  Maps 5-digit SIC code to section letter (A-U). Exact mapping from SPEC.md §5.2.
+
+Rate limiting: max 2 req/sec (600 per 5 min).
+Error handling: 429 → exponential backoff. 404 → return None. 5xx → retry 3x.
+
+TDD tests in tests/test_companies_house.py:
+1. search_company with mock response → parses correctly
+2. sic_to_section("62020") → "J" (Information and Communication)
+3. sic_to_section("86101") → "Q" (Human Health)
+4. Rate limit: 429 response → retries after delay
+5. Company not found → returns None gracefully
+
+Run tests: uv run pytest tests/test_companies_house.py
+```
+
+### 3.5 Build Enrichment Orchestrator
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/enrichment/orchestrator.py
+
+enrich_companies(batch_size: int = 100):
+  1. Query companies WHERE enriched_at IS NULL
+  2. For each company: search Companies House
+  3. If match found: get full profile, extract SIC codes, status, creation date
+  4. Update companies table
+  5. Rate limit: asyncio.sleep(0.5) between requests
+  6. Log progress
+
+predict_missing_salaries():
+  1. Load trained XGBoost model
+  2. Query jobs WHERE salary_annual_max IS NULL AND salary_predicted_max IS NULL
+  3. Build features for batch
+  4. Predict and store in salary_predicted_min/max with confidence
+  5. Set salary_model_version
+
+Add Modal functions:
+  train_salary_model (monthly cron)
+  enrich_companies (nightly cron)
+  predict_salaries (nightly cron, after training)
+```
+
+### 3.6 Verify and Merge
+
+```bash
+uv run pytest --cov=src/salary --cov-fail-under=85
+uv run pytest --cov=src/enrichment --cov-fail-under=85
+uv run ruff check . && uv run mypy src/
+git add -A
+git commit -m "feat(salary): XGBoost prediction, Companies House enrichment, SIC mapping"
+git tag v0.2.0-salary
+```
+
+**`/clear` — Start fresh for Stage 4.**
+
+---
+
+## 4. Stage 4: Cross-Encoder Re-ranking (Week 8)
+
+**Branch:** `search-match-phase` (continue on same branch)
+
+```bash
+git checkout search-match-phase
+```
+
+### 4.1 Write Migration 010
+
+**Prompt to Claude Code:**
+
+```
+Write supabase/migrations/010_user_profiles_search_v2/up.sql and down.sql.
+
+Exact SQL from SPEC.md §2.4. Creates:
+- user_profiles table with embedding, RLS policies
+- search_jobs_v2() function with expanded filters and return fields
+
+Run: supabase db reset
+Verify: user_profiles table exists with RLS. search_jobs_v2() callable.
+```
+
+### 4.2 Build Cross-Encoder Re-ranker
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/search/reranker.py — exact code from SPEC.md §6.2.
+
+get_reranker() -> CrossEncoder
+  Lazy-loads ms-marco-MiniLM-L-6-v2, max_length=512.
+
+rerank(query: str, jobs: list[dict], top_k: int = 20) -> list[dict]:
+  Creates (query, job_text) pairs
+  job_text = "{title} at {company}. {description[:300]}"
+  Scores all pairs, sorts by score, returns top_k
+  Adds rerank_score to each job dict
+
+TDD tests in tests/test_reranker.py:
+1. Relevant job scores higher than irrelevant job
+   e.g., query="Python developer", job_a="Senior Python Developer at TechCo", job_b="Chef at Restaurant"
+2. 50 pairs scored in < 2 seconds (CPU)
+3. top_k=5 returns exactly 5 results
+4. Empty job list returns empty list
+5. rerank_score added to each job dict
+
+Run tests: uv run pytest tests/test_reranker.py
+```
+
+### 4.3 Build User Profile Handler
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/profiles/handler.py
+
+create_or_update_profile(user_id: str, profile_data: dict) -> dict:
+  1. Build profile text template from SPEC.md §6.4
+  2. Embed via Gemini embedding-001 (same model as jobs)
+  3. Upsert into user_profiles table
+  4. Return profile with embedding
+
+get_profile_embedding(user_id: str) -> list[float] | None:
+  Returns profile embedding for search personalization.
+
+Profile text template:
+  Target Role: {target_role}
+  Skills: {skills, comma-separated}
+  Experience: {experience_text}
+  Location: {preferred_location}
+  Work Preference: {work_preference}
+
+TDD tests in tests/test_profile_handler.py:
+1. Profile text template correctly formatted
+2. Embedding is 768 dimensions
+3. Re-embedding on update produces new vector
+4. Missing optional fields handled (empty string, not error)
+5. RLS: only user's own profile returned
+
+Run tests: uv run pytest tests/test_profile_handler.py
+```
+
+### 4.4 Build Search Orchestrator (API endpoint)
+
+**Prompt to Claude Code:**
+
+```
+Build pipeline/src/search/orchestrator.py
+
+This is the main search endpoint that combines everything:
+
+search(query: str, user_id: str | None, filters: dict) -> dict:
+  1. Embed query via Gemini
+  2. Call search_jobs_v2() with query_text + query_embedding + filters → top 50
+  3. Cross-encoder rerank → top 20
+  4. If user_id: factor in profile embedding for personalization
+  5. Return results with rrf_score, rerank_score
+
+This will be called from a Modal HTTP endpoint or Next.js API route.
+
+Create a Modal @web_endpoint for this:
+  POST /search
+  Body: { query, user_id?, filters? }
+  Response: { results: [...], total, latency_ms }
+
+Test with: curl -X POST https://<modal-url>/search -d '{"query": "Python developer in London"}'
+```
+
+### 4.5 Update Modal Image and Functions
+
+**Prompt to Claude Code:**
+
+```
+Update pipeline/src/modal_app.py for all Phase 2 additions.
+
+New dependencies in image:
+- sentence-transformers>=2.2
+- xgboost>=2.0
+- scikit-learn>=1.4
+- datasketch>=1.6
+- xxhash>=3.0
+
+New secrets:
+- COMPANIES_HOUSE_API_KEY
+
+New Modal functions:
+- seed_esco (one-time)
+- backfill_job_skills (one-time, then daily for new jobs)
+- backfill_dedup (one-time, then daily for new jobs)
+- train_salary_model (monthly cron)
+- enrich_companies (nightly cron)
+- predict_salaries (nightly cron)
+- search (web endpoint, always warm)
+
+New cron schedules:
+- Daily: backfill_job_skills for new ready jobs
+- Daily: run dedup for new ready jobs
+- Daily: predict salaries for jobs missing salary
+- Nightly: enrich new companies
+- Monthly: retrain salary model
+```
+
+### 4.6 Search Quality Verification
+
+**Prompt to Claude Code:**
+
+```
+Build tests/test_search_quality.py
+
+50+ test queries from SPEC.md §6.5 covering:
+- Role-based (10 queries)
+- Location-specific (10 queries)
+- Skill-based (10 queries)
+- Seniority (5 queries)
+- Salary range (5 queries)
+- Remote/hybrid (5 queries)
+- Edge cases (5+ queries)
+
+For each query, verify:
+1. Results returned (non-empty for valid queries)
+2. Top result is relevant (title or skills match)
+3. Cross-encoder score > RRF score correlation (reranking helps)
+4. No SQL errors
+5. Response time < 2 seconds (including re-ranking)
+
+Run: uv run pytest tests/test_search_quality.py -v
+```
+
+### 4.7 Verify and Merge
 
 ```bash
 uv run pytest --cov=src --cov-fail-under=80
 uv run ruff check . && uv run mypy src/
 git add -A
-git commit -m "feat(pipeline): expiry, DLQ retry, health monitoring, search_jobs(), E2E verified"
-# One squash merge of all Phase 1 work to main
+git commit -m "feat(search): cross-encoder re-ranking, user profiles, search_jobs_v2"
+# Squash merge search-match-phase to main
 git checkout main
-git merge --squash data-phase
-git commit -m "feat(phase-1): complete data pipeline — 4 collectors, processing, embeddings, search"
-git tag v0.1.0
-git branch -d data-phase
+git merge --squash search-match-phase
+git commit -m "feat(pipeline): Phase 2 complete — skills, dedup, salary, re-ranking, search_jobs_v2"
+git tag v0.2.0
 ```
 
 ---
 
 ## 5. Production Deployment
 
-### 5.1 Deploy Database
+### 5.1 Deploy Database Migrations
 
 ```bash
-# Link to production Supabase project
-supabase link --project-ref <YOUR_PROJECT_REF>
-
-# Push all migrations
+# Push all Phase 2 migrations (007-010)
 supabase db push
 
 # Verify
-supabase db remote commit  # Should show clean state
+supabase db remote commit
+# Tables: esco_skills, sic_industry_map, user_profiles exist
+# Functions: search_jobs_v2, compute_duplicate_score exist
+# Views: mv_skill_demand, mv_skill_cooccurrence exist
 ```
 
 ### 5.2 Deploy Pipeline
 
 ```bash
-# Create Modal secrets (one-time)
-modal secret create atoz-env \
-    REED_API_KEY=<value> \
-    ADZUNA_APP_ID=<value> \
-    ADZUNA_APP_KEY=<value> \
-    JOOBLE_API_KEY=<value> \
-    CAREERJET_AFFID=<value> \
-    GOOGLE_API_KEY=<value> \
-    SUPABASE_URL=<value> \
-    SUPABASE_SERVICE_ROLE_KEY=<value> \
-    DATABASE_URL=<value> \
-    SENTRY_DSN=<value>
+# Update Modal secrets
+modal secret update atoz-env \
+    COMPANIES_HOUSE_API_KEY=<value>
 
 # Deploy
 cd pipeline && modal deploy src/modal_app.py
 
-# Verify: all crons visible in Modal dashboard
-# Trigger first run manually:
-modal run src/modal_app.py::fetch_reed
+# One-time: seed ESCO data
+modal run src/modal_app.py::seed_esco
+
+# One-time: backfill job_skills
+modal run src/modal_app.py::backfill_job_skills
+
+# One-time: run advanced dedup
+modal run src/modal_app.py::backfill_dedup
+
+# One-time: train salary model
+modal run src/modal_app.py::train_salary_model
+
+# One-time: initial company enrichment
+modal run src/modal_app.py::enrich_companies
+
+# One-time: predict missing salaries
+modal run src/modal_app.py::predict_salaries
 ```
 
 ### 5.3 Run GATES.md Go/No-Go Checklist
 
-Execute every item in GATES.md §3 (Go/No-Go Production Checklist). All 20 items must pass before declaring Phase 1 complete.
+Execute every item in GATES.md. All items must pass before declaring Phase 2 complete.
 
 ### 5.4 Monitor First 24 Hours
 
-Watch for: zero ingestion (3 hours), DLQ overflow (>100), missing embeddings, search latency (>100ms P95). See GATES.md §3.3 for full monitoring criteria and §4 for rollback procedures.
+Watch for: cross-encoder latency (>2s), missing skill extractions, dedup false positives, salary prediction outliers.
 
 ---
 
@@ -891,52 +763,56 @@ Watch for: zero ingestion (3 hours), DLQ overflow (>100), missing embeddings, se
 
 | Order | File | Stage |
 |---|---|---|
-| 1 | Directory structure + configs | Foundation |
-| 2 | CLAUDE.md (root + subdirectory) | Foundation |
-| 3 | .claude/settings.json | Foundation |
-| 4 | .env.example | Foundation |
-| 5 | justfile | Foundation |
-| 6 | pyproject.toml | Foundation |
-| 7 | Migration 001–005 (up.sql + down.sql each) | Foundation |
-| 8 | seed.sql | Foundation |
-| 9 | pipeline/src/models/job.py (JobBase + adapters) | Collection |
-| 10 | pipeline/src/models/errors.py | Collection |
-| 11 | pipeline/src/collectors/circuit_breaker.py | Collection |
-| 12 | pipeline/src/collectors/reed.py | Collection |
-| 13 | pipeline/src/collectors/adzuna.py | Collection |
-| 14 | pipeline/src/collectors/jooble.py | Collection |
-| 15 | pipeline/src/collectors/careerjet.py | Collection |
-| 16 | pipeline/src/modal_app.py | Collection |
-| 17 | pipeline/src/processing/salary.py | Processing |
-| 18 | pipeline/src/processing/location.py | Processing |
-| 19 | pipeline/src/processing/category.py | Processing |
-| 20 | pipeline/src/processing/seniority.py | Processing |
-| 21 | pipeline/src/processing/summary.py | Processing |
-| 22 | pipeline/src/skills/dictionary.py | Processing |
-| 23 | pipeline/src/skills/extractor.py | Processing |
-| 24 | pipeline/src/embeddings/embed.py | Processing |
-| 25 | pipeline/src/embeddings/fallback.py | Processing |
-| 26 | pipeline/src/processing/dedup.py | Processing |
-| 27 | pipeline/src/processing/queue_runner.py | Processing |
-| 28 | pipeline/src/maintenance/expiry.py | Maintenance |
-| 29 | pipeline/src/maintenance/dlq.py | Maintenance |
-| 30 | pipeline/src/maintenance/health.py | Maintenance |
-| 31 | Migration 006 (search_jobs function) | Maintenance |
+| 1 | Migration 007 (up.sql + down.sql) | Skills |
+| 2 | pipeline/src/skills/esco_loader.py | Skills |
+| 3 | pipeline/src/skills/dictionary_builder.py | Skills |
+| 4 | pipeline/src/skills/spacy_matcher.py | Skills |
+| 5 | pipeline/src/skills/populate.py | Skills |
+| 6 | pipeline/src/skills/seed_esco.py | Skills |
+| 7 | Migration 008 (up.sql + down.sql) | Dedup |
+| 8 | pipeline/src/dedup/fuzzy_matcher.py | Dedup |
+| 9 | pipeline/src/dedup/minhash.py | Dedup |
+| 10 | pipeline/src/dedup/orchestrator.py | Dedup |
+| 11 | Migration 009 (up.sql + down.sql) | Salary |
+| 12 | pipeline/src/salary/features.py | Salary |
+| 13 | pipeline/src/salary/trainer.py | Salary |
+| 14 | pipeline/src/enrichment/companies_house.py | Salary |
+| 15 | pipeline/src/enrichment/orchestrator.py | Salary |
+| 16 | Migration 010 (up.sql + down.sql) | Re-ranking |
+| 17 | pipeline/src/search/reranker.py | Re-ranking |
+| 18 | pipeline/src/profiles/handler.py | Re-ranking |
+| 19 | pipeline/src/search/orchestrator.py | Re-ranking |
+| 20 | Update pipeline/src/modal_app.py | Re-ranking |
+| 21 | tests/test_search_quality.py | Re-ranking |
 
 ## Appendix B: Conventional Commit Messages
 
 ```
-feat(foundation): migrations, CLAUDE.md, .claude/, seed data
-feat(pipeline): add Reed collector with category sweep
-feat(pipeline): add Adzuna collector with coordinate extraction
-feat(pipeline): add Jooble/Careerjet collectors
-feat(pipeline): salary normalizer (12 patterns, 252 days)
-feat(pipeline): location normalizer with postcodes.io
-feat(pipeline): category mapper (Reed + Adzuna + keyword inference)
-feat(pipeline): skill extractor with ESCO dictionary
-feat(pipeline): Gemini embedding pipeline with OpenAI fallback
-feat(pipeline): queue runner wiring all 6 queues
-feat(pipeline): expiry detection and DLQ retry
-feat(pipeline): search_jobs() hybrid search function
-feat(pipeline): E2E verified, production ready
+feat(skills): ESCO loader and taxonomy seeding
+feat(skills): SpaCy PhraseMatcher with two-layer matching
+feat(skills): job_skills backfill and materialized views
+feat(dedup): pg_trgm fuzzy matching with composite scoring
+feat(dedup): MinHash/LSH near-duplicate detection
+feat(dedup): dedup orchestrator combining all 3 stages
+feat(salary): XGBoost salary prediction with feature engineering
+feat(enrichment): Companies House API integration with SIC mapping
+feat(search): cross-encoder ms-marco-MiniLM re-ranking
+feat(search): user profile embedding and search personalization
+feat(search): search_jobs_v2 with expanded filters
+feat(search): search quality verification (50+ test queries)
+feat(pipeline): Phase 2 complete, E2E verified, production ready
+```
+
+## Appendix C: CLAUDE.md Updates for Phase 2
+
+Add these lines to the root CLAUDE.md after Phase 2 deployment:
+
+```
+## Phase 2 Additions
+- SpaCy PhraseMatcher for skill extraction (Phase 2 upgrade from Phase 1 regex)
+- Cross-encoder: ms-marco-MiniLM-L-6-v2 for re-ranking (CPU, no GPU)
+- XGBoost salary prediction (trained monthly on Adzuna labeled data)
+- Companies House API for company enrichment (free, 600 req/5min)
+- search_jobs_v2() replaces search_jobs() for Phase 3 UI
+- Materialized views: mv_skill_demand, mv_skill_cooccurrence (refreshed daily)
 ```
