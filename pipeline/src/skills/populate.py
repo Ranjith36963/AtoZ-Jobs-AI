@@ -30,14 +30,14 @@ async def get_jobs_without_skills(
     Returns:
         List of job dicts with id, title, description_plain.
     """
+    existing = db_client.table("job_skills").select("job_id").execute().data
+    existing_ids = [row["job_id"] for row in existing] if existing else []
+
     result = (
         db_client.table("jobs")
         .select("id, title, description_plain")
         .eq("status", "ready")
-        .not_.in_(
-            "id",
-            db_client.table("job_skills").select("job_id").execute().data,
-        )
+        .not_.in_("id", existing_ids)
         .limit(batch_size)
         .execute()
     )
