@@ -107,3 +107,35 @@ class TestBuildLshIndex:
         mh = compute_minhash("Valid Python developer description")
         candidates = find_lsh_candidates(lsh, "99", mh)
         assert "3" in candidates
+
+    def test_duplicate_key_skipped(self) -> None:
+        """Duplicate job IDs are silently skipped (ValueError caught)."""
+        jobs = [
+            {
+                "id": 1,
+                "description_plain": "Python developer with Django experience in London",
+            },
+            {
+                "id": 1,
+                "description_plain": "Python developer with Django experience in London",
+            },
+        ]
+        # Should not raise — duplicate key is caught
+        lsh = build_lsh_index(jobs)
+        assert lsh is not None
+
+    def test_duplicate_key_does_not_lose_first(self) -> None:
+        """First entry with a duplicate key is still queryable."""
+        desc = "Python developer with Django and PostgreSQL experience building web applications"
+        jobs = [
+            {"id": 1, "description_plain": desc},
+            {"id": 1, "description_plain": desc},
+            {
+                "id": 2,
+                "description_plain": "Completely unrelated chef job in restaurant",
+            },
+        ]
+        lsh = build_lsh_index(jobs)
+        mh = compute_minhash(desc)
+        candidates = find_lsh_candidates(lsh, "99", mh)
+        assert "1" in candidates
