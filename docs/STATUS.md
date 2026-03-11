@@ -1,8 +1,8 @@
-# AtoZ Jobs AI — Phase 1 Status
+# AtoZ Jobs AI — Project Status
 
-**Last updated:** 2026-03-05
+**Last updated:** 2026-03-08
 
-## Current Stage: 4 — Maintenance + Verification (Code Complete)
+## Current Stage: Phase 2 — Audit Fixes Applied (Code Complete)
 
 ---
 
@@ -229,3 +229,95 @@ All 26 unverified gates require infrastructure:
 4. **Modal account** (for deploy + E2E tests)
 
 All code is complete and unit-tested. Infrastructure gates are the remaining verification step.
+
+---
+
+## Phase 2: Search & Match — CODE COMPLETE + AUDIT FIXES APPLIED
+
+**Reference docs:** `origin/search-match-phase` branch root (SPEC.md, PLAYBOOK.md, GATES.md)
+
+### Stage 1: Skills Extraction — CODE COMPLETE
+- [x] Migration 010: ESCO taxonomy (esco_skills, mv_skill_demand, mv_skill_cooccurrence, pg_cron)
+- [x] Migration 014: RLS for esco_skills (public read + service role write)
+- [x] ESCO CSV loader (concept_uri, preferred_label, alt_labels, skill_type)
+- [x] Dictionary builder (~405 patterns, ~317 canonical names: Phase 1 + UK-specific + ESCO)
+- [x] UK-specific entries expanded to ~291 entries across 12 categories per SPEC §3.2
+- [x] SpaCy PhraseMatcher (two-layer: LOWER + ORTH for acronyms ≤6 chars)
+- [x] ESCO seeder (bulk insert into esco_skills + skills tables)
+- [x] Job skills population (backfill job_skills with extraction results)
+- [x] Tests: test_esco_loader.py, test_dictionary_builder.py, test_spacy_matcher.py, test_populate.py
+
+### Stage 2: Advanced Dedup — CODE COMPLETE
+- [x] Migration 011: Dedup infrastructure (canonical_id, is_duplicate, duplicate_score, description_hash, indexes)
+- [x] Migration 015: find_fuzzy_duplicates SQL function (SPEC §4.2, pg_trgm + compute_duplicate_score)
+- [x] Fuzzy matcher (composite scoring: title 0.35 + company 0.25 + location 0.15 + salary 0.15 + date 0.10)
+- [x] MinHash/LSH (datasketch + xxhash, 3-char grams, threshold=0.5, num_perm=128)
+- [x] Dedup orchestrator (3-stage: hash → pg_trgm → MinHash/LSH)
+- [x] Canonical selection (keep richest version based on field completeness)
+- [x] Tests: test_fuzzy_matcher.py (with hypothesis property-based), test_minhash.py, test_dedup_orchestrator.py
+
+### Stage 3: Salary Prediction + Company Enrichment — CODE COMPLETE
+- [x] Migration 012: Salary prediction columns + company enrichment + sic_industry_map
+- [x] Migration 014: RLS for sic_industry_map (public read + service role write)
+- [x] XGBoost trainer (train/predict/save/load, ±10% band, 3-tier confidence)
+- [x] Feature builder (TF-IDF 500 + one-hot region 12 + category 17 + ordinal seniority + skill_count + top 50 skills)
+- [x] Companies House API client (search + profile, SIC → section A-U, Basic Auth, retry on 429)
+- [x] Enrichment orchestrator (company enrichment + salary prediction)
+- [x] Tests: test_salary_trainer.py, test_salary_features.py, test_companies_house.py, test_enrichment_orchestrator.py
+
+### Stage 4: Cross-Encoder Re-ranking + User Profiles — CODE COMPLETE
+- [x] Migration 013: user_profiles (HALFVEC(768), CHECK, RLS) + search_jobs_v2 (14 params, 18 fields, LANGUAGE sql STABLE)
+- [x] Cross-encoder re-ranker (ms-marco-MiniLM-L-6-v2, max_length=512, lazy singleton)
+- [x] Search orchestrator (embed → search_jobs_v2 RPC → rerank, graceful degradation)
+- [x] Profile handler (build_profile_text → embed → upsert, fixed Gemini import)
+- [x] Tests: test_reranker.py, test_search_orchestrator.py, test_search_quality.py, test_profile_handler.py
+
+### Modal Integration — WIRED
+- [x] All 7 Phase 2 functions wired to implementations (seed_esco, backfill_job_skills, backfill_dedup, train_salary, enrich_companies, predict_salaries, search_endpoint)
+- [x] Phase 1 crons wired (fetch_reed/adzuna/aggregators → UPSERT, process_queues → pipeline, daily_maintenance → expiry/DLQ/health)
+- [x] _get_db() helper using service_role key (server-only, never exposed)
+
+### Audit Fixes Applied (2026-03-08)
+| Severity | Finding | Fix |
+|----------|---------|-----|
+| H1+H2 | No RLS on esco_skills, sic_industry_map | Migration 014: Two-tier RLS |
+| H3 | find_fuzzy_duplicates SQL function missing | Migration 015: Created function |
+| H4 | Broken `src.embeddings.gemini` import | Fixed to `src.embeddings.embed` |
+| H5+M3 | All Modal functions were stubs | Wired to actual implementations |
+| M1 | Only ~96 UK entries (SPEC: ~300) | Expanded to ~291 entries |
+| M2 | set_config RPC won't work in Supabase | Removed; threshold in SQL function |
+| M4 | No hypothesis tests for Phase 2 | Added property-based tests |
+| L1 | Any types in 9 source files | Replaced with typed imports |
+| L2+L3 | STATUS.md outdated | Updated with Phase 2 status |
+
+### Phase 2 Test Summary
+
+| Test File | Focus | Status |
+|-----------|-------|--------|
+| test_esco_loader.py | ESCO CSV parsing | PASS |
+| test_dictionary_builder.py | Skill dictionary + hypothesis | PASS |
+| test_spacy_matcher.py | PhraseMatcher + hypothesis | PASS |
+| test_populate.py | Job skills population | PASS |
+| test_minhash.py | MinHash/LSH | PASS |
+| test_fuzzy_matcher.py | Composite scoring + hypothesis | PASS |
+| test_dedup_orchestrator.py | 3-stage dedup | PASS |
+| test_salary_trainer.py | XGBoost train/predict | PASS |
+| test_salary_features.py | Feature engineering | PASS |
+| test_companies_house.py | Companies House API | PASS |
+| test_enrichment_orchestrator.py | Company + salary | PASS |
+| test_reranker.py | Cross-encoder | PASS |
+| test_search_orchestrator.py | Search pipeline | PASS |
+| test_search_quality.py | Search quality | PASS |
+| test_profile_handler.py | User profiles | PASS |
+
+### Phase 2 GATES.md Verification
+
+| Category | Total | Pass | Partial | Skip (infra) |
+|----------|-------|------|---------|---------------|
+| Gate 1: Skills (S1-S16) | 16 | ~12 | 0 | ~4 |
+| Gate 2: Dedup (D1-D16) | 16 | ~12 | 0 | ~4 |
+| Gate 3: Salary (P1-P18) | 18 | ~12 | 1 | ~5 |
+| Gate 4: Re-ranking (R1-R18) | 18 | ~12 | 0 | ~6 |
+| Test queries (Q1-Q15) | 15 | 0 | 0 | 15 (need DB) |
+| Go/No-Go (G1-G30) | 30 | ~10 | 0 | ~20 |
+| Performance SLAs (S1-S9) | 9 | 0 | 0 | 9 (need DB) |

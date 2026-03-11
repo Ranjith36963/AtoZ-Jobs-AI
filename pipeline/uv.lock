@@ -177,6 +177,11 @@ dev = [
     { name = "types-beautifulsoup4" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest-cov" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
@@ -203,6 +208,9 @@ requires-dist = [
     { name = "xxhash", specifier = ">=3.0" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest-cov", specifier = ">=7.0.0" }]
 
 [[package]]
 name = "attrs"

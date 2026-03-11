@@ -52,8 +52,14 @@ class TestBuildLshIndex:
     def test_build_index(self) -> None:
         jobs = [
             {"id": 1, "description_plain": "Python developer with Django experience"},
-            {"id": 2, "description_plain": "Java developer with Spring Boot experience"},
-            {"id": 3, "description_plain": "Python developer with Django and PostgreSQL experience"},
+            {
+                "id": 2,
+                "description_plain": "Java developer with Spring Boot experience",
+            },
+            {
+                "id": 3,
+                "description_plain": "Python developer with Django and PostgreSQL experience",
+            },
         ]
         lsh = build_lsh_index(jobs)
         assert lsh is not None

@@ -20,7 +20,9 @@ def _synthetic_data(n: int = 200) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.RandomState(42)
     features = rng.rand(n, 20)
     # Salary correlated with first few features
-    labels = 30000 + features[:, 0] * 40000 + features[:, 1] * 20000 + rng.normal(0, 2000, n)
+    labels = (
+        30000 + features[:, 0] * 40000 + features[:, 1] * 20000 + rng.normal(0, 2000, n)
+    )
     return features, labels
 
 
@@ -103,5 +105,11 @@ class TestModelPersistence:
             loaded_preds = predict_salary(loaded, test_features)
 
         for orig, loaded_p in zip(original_preds, loaded_preds):
-            assert abs(float(orig["predicted_min"]) - float(loaded_p["predicted_min"])) < 0.01
-            assert abs(float(orig["predicted_max"]) - float(loaded_p["predicted_max"])) < 0.01
+            assert (
+                abs(float(orig["predicted_min"]) - float(loaded_p["predicted_min"]))
+                < 0.01
+            )
+            assert (
+                abs(float(orig["predicted_max"]) - float(loaded_p["predicted_max"]))
+                < 0.01
+            )

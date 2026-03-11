@@ -1,32 +1,40 @@
 """Search orchestrator combining RRF + cross-encoder re-ranking (SPEC.md §6).
 
-Main search endpoint: embed query → search_jobs_v2 → cross-encoder rerank.
+Main search endpoint: embed query -> search_jobs_v2 -> cross-encoder rerank.
 Gracefully degrades if reranker unavailable.
 """
 
+from __future__ import annotations
+
 import time
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from src.search.reranker import rerank
 
+if TYPE_CHECKING:
+    from supabase import Client
+
 logger = structlog.get_logger()
+
+EmbedFn = Callable[[str], Awaitable[list[float]]]
 
 
 async def search(
     query: str,
-    db_client: Any,
-    embed_fn: Any = None,
+    db_client: Client,
+    embed_fn: EmbedFn | None = None,
     user_id: str | None = None,
     filters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Execute full search pipeline: embed → RRF → rerank.
+    """Execute full search pipeline: embed -> RRF -> rerank.
 
     Args:
         query: User search text.
         db_client: Supabase client.
-        embed_fn: Async function to embed text → list[float].
+        embed_fn: Async function to embed text -> list[float].
         user_id: Optional UUID for personalization.
         filters: Search filter parameters.
 

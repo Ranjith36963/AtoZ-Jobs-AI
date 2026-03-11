@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typing import Any
 
+
 def _make_job(
     job_id: int,
     title: str = "Software Engineer",
@@ -46,11 +47,15 @@ def _make_job(
         "source_url": f"https://example.com/job/{job_id}",
         "rrf_score": rrf_score,
     }
+
+
 def _make_mock_db(jobs: list[dict[str, Any]] | None = None) -> MagicMock:
     """Create mock DB returning given jobs from search_jobs_v2."""
     mock_db = MagicMock()
     mock_db.rpc.return_value.execute.return_value.data = jobs or []
     return mock_db
+
+
 class TestSearchQualityBasicQueries:
     """Q1-Q3: Basic keyword, semantic, and filter queries."""
 
@@ -76,13 +81,14 @@ class TestSearchQualityBasicQueries:
         """Various queries return non-empty results with correct structure."""
         from src.search.orchestrator import search
 
-        jobs = [
-            _make_job(i, title=f"Job {i} - {query}") for i in range(5)
-        ]
+        jobs = [_make_job(i, title=f"Job {i} - {query}") for i in range(5)]
         mock_db = _make_mock_db(jobs)
         mock_embed = AsyncMock(return_value=[0.1] * 768)
 
-        with patch("src.search.orchestrator.rerank", side_effect=lambda q, j, **kw: j[:kw.get("top_k", 20)]):
+        with patch(
+            "src.search.orchestrator.rerank",
+            side_effect=lambda q, j, **kw: j[: kw.get("top_k", 20)],
+        ):
             result = await search(
                 query=query,
                 db_client=mock_db,
@@ -94,6 +100,8 @@ class TestSearchQualityBasicQueries:
         assert all("title" in r for r in result["results"])
         assert all("id" in r for r in result["results"])
         assert result["latency_ms"] >= 0
+
+
 class TestSearchQualityFilters:
     """Q4-Q7: Filter-specific tests."""
 
@@ -122,7 +130,13 @@ class TestSearchQualityFilters:
         from src.search.orchestrator import search
 
         jobs = [
-            _make_job(1, salary_min=None, salary_max=None, predicted_min=35000, predicted_max=45000),
+            _make_job(
+                1,
+                salary_min=None,
+                salary_max=None,
+                predicted_min=35000,
+                predicted_max=45000,
+            ),
         ]
         mock_db = _make_mock_db(jobs)
         mock_embed = AsyncMock(return_value=[0.1] * 768)
@@ -170,7 +184,10 @@ class TestSearchQualityFilters:
                 query="DevOps",
                 db_client=mock_db,
                 embed_fn=mock_embed,
-                filters={"include_remote": True, "skill_filters": ["Docker", "Kubernetes"]},
+                filters={
+                    "include_remote": True,
+                    "skill_filters": ["Docker", "Kubernetes"],
+                },
             )
 
         params = mock_db.rpc.call_args[0][1]
@@ -195,6 +212,8 @@ class TestSearchQualityFilters:
 
         params = mock_db.rpc.call_args[0][1]
         assert params["category_filter"] == "Finance"
+
+
 class TestSearchQualityReranking:
     """Q8-Q10: Re-ranking verification."""
 
@@ -219,7 +238,9 @@ class TestSearchQualityReranking:
             )
 
         mock_rerank.assert_called_once()
-        assert result["results"][0]["rerank_score"] > result["results"][1]["rerank_score"]
+        assert (
+            result["results"][0]["rerank_score"] > result["results"][1]["rerank_score"]
+        )
 
     @pytest.mark.asyncio
     async def test_reranking_adds_score(self) -> None:
@@ -239,6 +260,8 @@ class TestSearchQualityReranking:
             )
 
         assert "rerank_score" in result["results"][0]
+
+
 class TestSearchQualityEdgeCases:
     """Q11-Q15: Edge cases and graceful degradation."""
 
@@ -353,6 +376,8 @@ class TestSearchQualityEdgeCases:
         params = mock_db.rpc.call_args[0][1]
         assert params["query_embedding"] is None
         assert params["query_text"] == "developer"
+
+
 class TestSearchQualityResponseStructure:
     """Verify response structure across all query types."""
 

@@ -41,9 +41,7 @@ def _mock_db_client(
     # skills insert chain
     skills_insert_chain = MagicMock()
     skills_insert_chain.insert.return_value = skills_insert_chain
-    skills_insert_chain.execute.return_value = MagicMock(
-        data=[{"id": 99}]
-    )
+    skills_insert_chain.execute.return_value = MagicMock(data=[{"id": 99}])
 
     # job_skills upsert chain
     js_chain = MagicMock()

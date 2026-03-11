@@ -3,17 +3,22 @@
 Backfills job_skills for all ready jobs missing skill extraction.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from src.skills.spacy_matcher import SpaCySkillMatcher
 
+if TYPE_CHECKING:
+    from supabase import Client
+
 logger = structlog.get_logger()
 
 
 async def get_jobs_without_skills(
-    db_client: Any,
+    db_client: Client,
     batch_size: int = 500,
 ) -> list[dict[str, Any]]:
     """Query ready jobs with no job_skills entries.
@@ -31,10 +36,7 @@ async def get_jobs_without_skills(
         .eq("status", "ready")
         .not_.in_(
             "id",
-            db_client.table("job_skills")
-            .select("job_id")
-            .execute()
-            .data,
+            db_client.table("job_skills").select("job_id").execute().data,
         )
         .limit(batch_size)
         .execute()
@@ -43,7 +45,7 @@ async def get_jobs_without_skills(
 
 
 async def upsert_skill(
-    db_client: Any,
+    db_client: Client,
     skill_name: str,
 ) -> int:
     """Get or create a skill by name.
@@ -57,26 +59,18 @@ async def upsert_skill(
     """
     # Try to find existing
     result = (
-        db_client.table("skills")
-        .select("id")
-        .eq("name", skill_name)
-        .limit(1)
-        .execute()
+        db_client.table("skills").select("id").eq("name", skill_name).limit(1).execute()
     )
     if result.data:
         return int(result.data[0]["id"])
 
     # Insert new skill
-    insert_result = (
-        db_client.table("skills")
-        .insert({"name": skill_name})
-        .execute()
-    )
+    insert_result = db_client.table("skills").insert({"name": skill_name}).execute()
     return int(insert_result.data[0]["id"])
 
 
 async def insert_job_skills(
-    db_client: Any,
+    db_client: Client,
     job_id: int,
     skill_ids: list[int],
 ) -> None:
@@ -101,7 +95,7 @@ async def insert_job_skills(
 
 
 async def populate_job_skills(
-    db_client: Any,
+    db_client: Client,
     matcher: SpaCySkillMatcher,
     batch_size: int = 500,
 ) -> dict[str, int]:

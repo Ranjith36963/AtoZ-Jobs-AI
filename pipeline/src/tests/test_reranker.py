@@ -1,4 +1,5 @@
 """Tests for cross-encoder re-ranker (SPEC.md §6.2, Gates R8-R10)."""
+
 from typing import Any
 
 from unittest.mock import MagicMock, patch
@@ -20,6 +21,7 @@ class TestGetReranker:
 
                 # Reset global state
                 import src.search.reranker as mod
+
                 mod._model = None
 
                 result = get_reranker()
@@ -48,6 +50,7 @@ class TestRerank:
     def _make_rerank(self) -> tuple[Any, MagicMock]:
         """Import rerank with mocked model."""
         import src.search.reranker as mod
+
         mock_model = MagicMock()
         mod._model = mock_model
         return mod.rerank, mock_model
@@ -60,9 +63,21 @@ class TestRerank:
         mock_model.predict.return_value = np.array([0.95, 0.1, 0.6])
 
         jobs = [
-            {"title": "Senior Python Developer", "company_name": "TechCo", "description_plain": "Python Django AWS"},
-            {"title": "Head Chef", "company_name": "Restaurant", "description_plain": "Cooking kitchen"},
-            {"title": "Junior Software Engineer", "company_name": "StartUp", "description_plain": "Python Flask"},
+            {
+                "title": "Senior Python Developer",
+                "company_name": "TechCo",
+                "description_plain": "Python Django AWS",
+            },
+            {
+                "title": "Head Chef",
+                "company_name": "Restaurant",
+                "description_plain": "Cooking kitchen",
+            },
+            {
+                "title": "Junior Software Engineer",
+                "company_name": "StartUp",
+                "description_plain": "Python Flask",
+            },
         ]
 
         result = rerank("Python developer", jobs)
@@ -72,20 +87,31 @@ class TestRerank:
         assert result[0]["rerank_score"] > result[-1]["rerank_score"]
 
         import src.search.reranker as mod
+
         mod._model = None
 
     def test_top_k(self) -> None:
         """Returns exactly top_k results."""
         rerank, mock_model = self._make_rerank()
 
-        mock_model.predict.return_value = np.array([0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05])
+        mock_model.predict.return_value = np.array(
+            [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05]
+        )
 
-        jobs = [{"title": f"Job {i}", "company_name": f"Co {i}", "description_plain": f"Desc {i}"} for i in range(10)]
+        jobs = [
+            {
+                "title": f"Job {i}",
+                "company_name": f"Co {i}",
+                "description_plain": f"Desc {i}",
+            }
+            for i in range(10)
+        ]
 
         result = rerank("test query", jobs, top_k=5)
         assert len(result) == 5
 
         import src.search.reranker as mod
+
         mod._model = None
 
     def test_empty_jobs(self) -> None:
@@ -96,6 +122,7 @@ class TestRerank:
         assert result == []
 
         import src.search.reranker as mod
+
         mod._model = None
 
     def test_empty_query(self) -> None:
@@ -107,6 +134,7 @@ class TestRerank:
         assert result == []
 
         import src.search.reranker as mod
+
         mod._model = None
 
     def test_rerank_score_added(self) -> None:
@@ -125,6 +153,7 @@ class TestRerank:
         assert isinstance(result[0]["rerank_score"], float)
 
         import src.search.reranker as mod
+
         mod._model = None
 
     def test_batch_call_structure(self) -> None:
@@ -134,7 +163,11 @@ class TestRerank:
         mock_model.predict.return_value = np.array([0.5, 0.5, 0.5])
 
         jobs = [
-            {"title": f"Job {i}", "company_name": f"Co {i}", "description_plain": f"Desc {i}"}
+            {
+                "title": f"Job {i}",
+                "company_name": f"Co {i}",
+                "description_plain": f"Desc {i}",
+            }
             for i in range(3)
         ]
 
@@ -146,6 +179,7 @@ class TestRerank:
         assert all(isinstance(p, tuple) and len(p) == 2 for p in pairs)
 
         import src.search.reranker as mod
+
         mod._model = None
 
     def test_missing_description(self) -> None:
@@ -160,6 +194,7 @@ class TestRerank:
         assert len(result) == 1
 
         import src.search.reranker as mod
+
         mod._model = None
 
     def test_fewer_jobs_than_top_k(self) -> None:
@@ -177,4 +212,5 @@ class TestRerank:
         assert len(result) == 2
 
         import src.search.reranker as mod
+
         mod._model = None

@@ -9,6 +9,7 @@ Verification methods (in priority order):
 
 Usage: cd pipeline && uv run python -m src.tests.phase2_gate_checks
 """
+
 from __future__ import annotations
 
 import os
@@ -65,9 +66,7 @@ def mig(key: str) -> str:
 _NO_TOKEN = "NO_TOKEN"
 
 
-def run_sql(
-    sql: str, retries: int = 3
-) -> list[dict[str, Any]] | str | None:
+def run_sql(sql: str, retries: int = 3) -> list[dict[str, Any]] | str | None:
     """Execute SQL via Management API."""
     if not HAS_TOKEN:
         return _NO_TOKEN
@@ -79,9 +78,9 @@ def run_sql(
             if r.status_code in (200, 201):
                 data = r.json()
                 return data if isinstance(data, list) else []
-            print(f"    [retry {i+1}/{retries}] HTTP {r.status_code}: {r.text[:200]}")
+            print(f"    [retry {i + 1}/{retries}] HTTP {r.status_code}: {r.text[:200]}")
         except httpx.RequestError as e:
-            print(f"    [retry {i+1}/{retries}] Network error: {e}")
+            print(f"    [retry {i + 1}/{retries}] Network error: {e}")
         time.sleep(2 * (i + 1))
     return None
 
@@ -103,6 +102,7 @@ def rows(r: SqlResult) -> list[dict[str, Any]]:
 
 
 # ── Helpers: Migration SQL inspection ──
+
 
 def mig_has(key: str, pattern: str, flags: int = re.IGNORECASE) -> bool:
     """Check if migration SQL contains a regex pattern."""
@@ -133,9 +133,19 @@ def pytest_file_passes(test_file: str) -> bool:
         return _PYTEST_FILE_CACHE[test_file]
     try:
         result = subprocess.run(
-            ["uv", "run", "pytest", f"src/tests/{test_file}", "--tb=line", "-q", "--no-header"],
+            [
+                "uv",
+                "run",
+                "pytest",
+                f"src/tests/{test_file}",
+                "--tb=line",
+                "-q",
+                "--no-header",
+            ],
             cwd=str(ROOT_DIR / "pipeline"),
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         passed = result.returncode == 0
         _PYTEST_FILE_CACHE[test_file] = passed
@@ -157,10 +167,20 @@ def get_coverage() -> float:
         return _COVERAGE
     try:
         result = subprocess.run(
-            ["uv", "run", "pytest", "--cov=src", "--cov-report=term",
-             "--tb=no", "-q", "--no-header"],
+            [
+                "uv",
+                "run",
+                "pytest",
+                "--cov=src",
+                "--cov-report=term",
+                "--tb=no",
+                "-q",
+                "--no-header",
+            ],
             cwd=str(ROOT_DIR / "pipeline"),
-            capture_output=True, text=True, timeout=300,
+            capture_output=True,
+            text=True,
+            timeout=300,
         )
         m = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", result.stdout)
         _COVERAGE = float(m.group(1)) if m else 0.0
@@ -171,13 +191,16 @@ def get_coverage() -> float:
 
 # ── Helpers: Lint ──
 
+
 def run_ruff() -> int:
     """Run ruff, return error count."""
     try:
         result = subprocess.run(
             ["uv", "run", "ruff", "check", "."],
             cwd=str(ROOT_DIR / "pipeline"),
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         if result.returncode == 0:
             return 0
@@ -192,7 +215,9 @@ def run_mypy() -> int:
         result = subprocess.run(
             ["uv", "run", "mypy", "src/"],
             cwd=str(ROOT_DIR / "pipeline"),
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         m = re.search(r"Found (\d+) error", result.stdout + result.stderr)
         return int(m.group(1)) if m else 0
@@ -272,24 +297,38 @@ def run_gate1() -> None:
     S = "Gate 1"
 
     # S1: esco_skills table exists
-    sql_or_mig(S, "S1",
-               "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='esco_skills';",
-               lambda r: is_ok(r) and len(r) > 0,
-               "esco_skills table exists", "esco_skills missing",
-               "010", r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?esco_skills",
-               "CREATE TABLE esco_skills found in migration 010")
+    sql_or_mig(
+        S,
+        "S1",
+        "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='esco_skills';",
+        lambda r: is_ok(r) and len(r) > 0,
+        "esco_skills table exists",
+        "esco_skills missing",
+        "010",
+        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?esco_skills",
+        "CREATE TABLE esco_skills found in migration 010",
+    )
 
     # S2: Rollback exists
     down_010 = MIGRATIONS_DIR / "20260301000010_skills_taxonomy_down.sql"
     if down_010.exists() and down_010.stat().st_size > 0:
-        record(S, "S2", "PASS", f"[rollback] {down_010.name} ({down_010.stat().st_size} bytes)")
+        record(
+            S,
+            "S2",
+            "PASS",
+            f"[rollback] {down_010.name} ({down_010.stat().st_size} bytes)",
+        )
     else:
         record(S, "S2", "SKIP", "Rollback file missing or empty")
 
     # S3: esco_skills schema + seed DDL (can't verify data count without DB)
     r = run_sql("SELECT count(*) as cnt FROM esco_skills;")
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         if cnt >= 13000:
             record(S, "S3", "PASS", f"{cnt} rows (need >= 13,000)")
         elif cnt > 0:
@@ -300,14 +339,23 @@ def run_gate1() -> None:
         # Verify ESCO loader code exists
         esco_loader = SRC_DIR / "skills" / "esco_loader.py"
         if esco_loader.exists() and file_has(esco_loader, r"esco_skills"):
-            record(S, "S3", "PASS", "[code] esco_loader.py exists with esco_skills insert logic")
+            record(
+                S,
+                "S3",
+                "PASS",
+                "[code] esco_loader.py exists with esco_skills insert logic",
+            )
         else:
             record(S, "S3", "SKIP", "Needs ESCO seed via Modal (loader not found)")
 
     # S4: skills table schema
     r = run_sql("SELECT count(*) as cnt FROM skills;")
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         if cnt >= 10000:
             record(S, "S4", "PASS", f"{cnt} rows")
         elif cnt > 0:
@@ -325,23 +373,41 @@ def run_gate1() -> None:
             record(S, "S4", "FAIL", "skills table DDL not found")
 
     # S5: UK-specific dictionary entries (verify via code)
-    r = run_sql("SELECT count(*) as cnt FROM skills WHERE name IN ('CSCS Card','CIPD','NMC Registered','SIA Licence','ACCA');")
+    r = run_sql(
+        "SELECT count(*) as cnt FROM skills WHERE name IN ('CSCS Card','CIPD','NMC Registered','SIA Licence','ACCA');"
+    )
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
-        record(S, "S5", "PASS" if cnt == 5 else "SKIP" if cnt == 0 else "FAIL", f"{cnt}/5 UK entries")
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
+        record(
+            S,
+            "S5",
+            "PASS" if cnt == 5 else "SKIP" if cnt == 0 else "FAIL",
+            f"{cnt}/5 UK entries",
+        )
     else:
         # Check dictionary_builder or dictionary for UK certs
         dict_builder = SRC_DIR / "skills" / "dictionary_builder.py"
         dict_file = SRC_DIR / "skills" / "dictionary.py"
         check_file = dict_builder if dict_builder.exists() else dict_file
-        has_uk = (check_file.exists() and
-                  file_has(check_file, r"CSCS") and
-                  file_has(check_file, r"CIPD") and
-                  file_has(check_file, r"NMC") and
-                  file_has(check_file, r"SIA") and
-                  file_has(check_file, r"ACCA"))
+        has_uk = (
+            check_file.exists()
+            and file_has(check_file, r"CSCS")
+            and file_has(check_file, r"CIPD")
+            and file_has(check_file, r"NMC")
+            and file_has(check_file, r"SIA")
+            and file_has(check_file, r"ACCA")
+        )
         if has_uk:
-            record(S, "S5", "PASS", "[code] dictionary_builder has CSCS/CIPD/NMC/SIA/ACCA patterns")
+            record(
+                S,
+                "S5",
+                "PASS",
+                "[code] dictionary_builder has CSCS/CIPD/NMC/SIA/ACCA patterns",
+            )
         else:
             record(S, "S5", "FAIL", "UK cert patterns not found in dictionary_builder")
 
@@ -368,28 +434,57 @@ def run_gate1() -> None:
     # S10: job_skills table DDL
     r = run_sql("SELECT count(*) as cnt FROM job_skills;")
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
-        record(S, "S10", "PASS" if cnt > 0 else "SKIP", f"{cnt} rows" if cnt > 0 else "Needs backfill via Modal")
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
+        record(
+            S,
+            "S10",
+            "PASS" if cnt > 0 else "SKIP",
+            f"{cnt} rows" if cnt > 0 else "Needs backfill via Modal",
+        )
     else:
         # job_skills referenced in migration 010 (MV queries) or created in 002
         mig_002 = MIGRATIONS_DIR / "20260301000002_core_tables.sql"
         if mig_002.exists() and file_has(mig_002, r"CREATE\s+TABLE\s+job_skills"):
-            record(S, "S10", "PASS", "[migration] job_skills table created in migration 002")
+            record(
+                S,
+                "S10",
+                "PASS",
+                "[migration] job_skills table created in migration 002",
+            )
         elif mig_has("010", r"job_skills"):
-            record(S, "S10", "PASS", "[migration] job_skills referenced in migration 010")
+            record(
+                S, "S10", "PASS", "[migration] job_skills referenced in migration 010"
+            )
         else:
             record(S, "S10", "FAIL", "job_skills table DDL not found")
 
     # S11: FK constraint exists in migration (orphan prevention)
-    r = run_sql("SELECT count(*) as cnt FROM job_skills js LEFT JOIN skills s ON s.id = js.skill_id WHERE s.id IS NULL;")
+    r = run_sql(
+        "SELECT count(*) as cnt FROM job_skills js LEFT JOIN skills s ON s.id = js.skill_id WHERE s.id IS NULL;"
+    )
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         record(S, "S11", "PASS" if cnt == 0 else "FAIL", f"{cnt} orphans")
     else:
         # FK constraint may be in Phase 1 migration 002 or 010
         mig_002 = MIGRATIONS_DIR / "20260301000002_core_tables.sql"
-        if (mig_002.exists() and file_has(mig_002, r"REFERENCES\s+skills")) or mig_has("010", r"REFERENCES\s+skills"):
-            record(S, "S11", "PASS", "[migration] FK constraint job_skills -> skills exists")
+        if (mig_002.exists() and file_has(mig_002, r"REFERENCES\s+skills")) or mig_has(
+            "010", r"REFERENCES\s+skills"
+        ):
+            record(
+                S,
+                "S11",
+                "PASS",
+                "[migration] FK constraint job_skills -> skills exists",
+            )
         else:
             record(S, "S11", "FAIL", "FK constraint not found")
 
@@ -400,19 +495,27 @@ def run_gate1() -> None:
             record(S, "S12", "PASS", f"{len(rows(r))} rows")
         else:
             record(S, "S12", "SKIP", "MV empty — needs refresh after backfill")
-    elif mig_has("010", r"CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?mv_skill_demand"):
+    elif mig_has(
+        "010",
+        r"CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?mv_skill_demand",
+    ):
         record(S, "S12", "PASS", "[migration] mv_skill_demand DDL exists")
     else:
         record(S, "S12", "FAIL", "mv_skill_demand not found")
 
     # S13: mv_skill_cooccurrence materialized view
-    r = run_sql("SELECT * FROM mv_skill_cooccurrence ORDER BY cooccurrence_count DESC LIMIT 10;")
+    r = run_sql(
+        "SELECT * FROM mv_skill_cooccurrence ORDER BY cooccurrence_count DESC LIMIT 10;"
+    )
     if not is_blocked(r):
         if is_ok(r) and len(rows(r)) > 0:
             record(S, "S13", "PASS", f"{len(rows(r))} rows")
         else:
             record(S, "S13", "SKIP", "MV empty — needs refresh after backfill")
-    elif mig_has("010", r"CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?mv_skill_cooccurrence"):
+    elif mig_has(
+        "010",
+        r"CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?mv_skill_cooccurrence",
+    ):
         record(S, "S13", "PASS", "[migration] mv_skill_cooccurrence DDL exists")
     else:
         record(S, "S13", "FAIL", "mv_skill_cooccurrence not found")
@@ -423,7 +526,12 @@ def run_gate1() -> None:
         cnt = len(rows(r)) if is_ok(r) else 0
         record(S, "S14", "PASS" if cnt >= 2 else "FAIL", f"{cnt} cron jobs")
     elif mig_count("010", r"cron\.schedule") >= 2:
-        record(S, "S14", "PASS", f"[migration] {mig_count('010', r'cron.schedule')} cron.schedule calls in 010")
+        record(
+            S,
+            "S14",
+            "PASS",
+            f"[migration] {mig_count('010', r'cron.schedule')} cron.schedule calls in 010",
+        )
     else:
         record(S, "S14", "FAIL", "cron jobs not found")
 
@@ -446,17 +554,27 @@ def run_gate2() -> None:
     S = "Gate 2"
 
     # D1: canonical_id column
-    sql_or_mig(S, "D1",
-               "SELECT column_name FROM information_schema.columns WHERE table_name='jobs' AND column_name='canonical_id';",
-               lambda r: is_ok(r) and len(r) > 0,
-               "canonical_id column exists", "canonical_id missing",
-               "011", r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?canonical_id",
-               "ADD COLUMN canonical_id in migration 011")
+    sql_or_mig(
+        S,
+        "D1",
+        "SELECT column_name FROM information_schema.columns WHERE table_name='jobs' AND column_name='canonical_id';",
+        lambda r: is_ok(r) and len(r) > 0,
+        "canonical_id column exists",
+        "canonical_id missing",
+        "011",
+        r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?canonical_id",
+        "ADD COLUMN canonical_id in migration 011",
+    )
 
     # D2: Rollback
     down_011 = MIGRATIONS_DIR / "20260301000011_advanced_dedup_down.sql"
     if down_011.exists() and down_011.stat().st_size > 0:
-        record(S, "D2", "PASS", f"[rollback] {down_011.name} ({down_011.stat().st_size} bytes)")
+        record(
+            S,
+            "D2",
+            "PASS",
+            f"[rollback] {down_011.name} ({down_011.stat().st_size} bytes)",
+        )
     else:
         record(S, "D2", "SKIP", "Rollback file missing or empty")
 
@@ -465,11 +583,20 @@ def run_gate2() -> None:
     if not is_blocked(r):
         if is_ok(r) and rows(r) and rows(r)[0].get("score") is not None:
             score = float(rows(r)[0]["score"])
-            record(S, "D3", "PASS" if abs(score - 0.865) < 0.01 else "FAIL", f"score={score} (expected 0.865)")
+            record(
+                S,
+                "D3",
+                "PASS" if abs(score - 0.865) < 0.01 else "FAIL",
+                f"score={score} (expected 0.865)",
+            )
         else:
             record(S, "D3", "FAIL", "Function not found or error")
-    elif mig_has("011", r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+compute_duplicate_score"):
-        record(S, "D3", "PASS", "[migration] compute_duplicate_score function DDL exists")
+    elif mig_has(
+        "011", r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+compute_duplicate_score"
+    ):
+        record(
+            S, "D3", "PASS", "[migration] compute_duplicate_score function DDL exists"
+        )
     else:
         record(S, "D3", "FAIL", "compute_duplicate_score not found")
 
@@ -494,7 +621,12 @@ def run_gate2() -> None:
                     passed = sim >= threshold
                 else:
                     passed = sim < threshold
-                record(S, did, "PASS" if passed else "FAIL", f"similarity={sim:.3f} ({op} {threshold})")
+                record(
+                    S,
+                    did,
+                    "PASS" if passed else "FAIL",
+                    f"similarity={sim:.3f} ({op} {threshold})",
+                )
             else:
                 record(S, did, "FAIL", "pg_trgm not available")
         elif mig_has("011", r"pg_trgm"):
@@ -514,31 +646,66 @@ def run_gate2() -> None:
         record(S, "D7", "FAIL", "test_fuzzy_matcher.py failed")
 
     minhash_pass = pytest_file_passes("test_minhash.py")
-    record(S, "D8", "PASS" if minhash_pass else "FAIL",
-           "[pytest] test_minhash.py passes (similar)" if minhash_pass else "test_minhash.py failed")
-    record(S, "D9", "PASS" if minhash_pass else "FAIL",
-           "[pytest] test_minhash.py passes (different)" if minhash_pass else "test_minhash.py failed")
+    record(
+        S,
+        "D8",
+        "PASS" if minhash_pass else "FAIL",
+        "[pytest] test_minhash.py passes (similar)"
+        if minhash_pass
+        else "test_minhash.py failed",
+    )
+    record(
+        S,
+        "D9",
+        "PASS" if minhash_pass else "FAIL",
+        "[pytest] test_minhash.py passes (different)"
+        if minhash_pass
+        else "test_minhash.py failed",
+    )
 
     dedup_pass = pytest_file_passes("test_dedup.py")
-    record(S, "D10", "PASS" if dedup_pass else "FAIL",
-           "[pytest] test_dedup.py passes (canonical)" if dedup_pass else "test_dedup.py failed")
+    record(
+        S,
+        "D10",
+        "PASS" if dedup_pass else "FAIL",
+        "[pytest] test_dedup.py passes (canonical)"
+        if dedup_pass
+        else "test_dedup.py failed",
+    )
 
     # D11: is_duplicate column exists
     r = run_sql("SELECT count(*) as cnt FROM jobs WHERE is_duplicate = TRUE;")
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
-        record(S, "D11", "PASS" if cnt > 0 else "SKIP", f"{cnt} duplicates" if cnt > 0 else "Needs dedup backfill")
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
+        record(
+            S,
+            "D11",
+            "PASS" if cnt > 0 else "SKIP",
+            f"{cnt} duplicates" if cnt > 0 else "Needs dedup backfill",
+        )
     elif mig_has("011", r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?is_duplicate"):
         record(S, "D11", "PASS", "[migration] is_duplicate column DDL exists")
     else:
         record(S, "D11", "FAIL", "is_duplicate column not found")
 
     # D12: Canonical FK constraint
-    r = run_sql("SELECT count(*) as cnt FROM jobs j WHERE j.canonical_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM jobs c WHERE c.id = j.canonical_id);")
+    r = run_sql(
+        "SELECT count(*) as cnt FROM jobs j WHERE j.canonical_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM jobs c WHERE c.id = j.canonical_id);"
+    )
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         record(S, "D12", "PASS" if cnt == 0 else "FAIL", f"{cnt} broken FK refs")
-    elif mig_has("011", r"REFERENCES\s+jobs\s*\(\s*id\s*\)") or mig_has("011", r"canonical_id.*uuid"):
+    elif mig_has("011", r"REFERENCES\s+jobs\s*\(\s*id\s*\)") or mig_has(
+        "011", r"canonical_id.*uuid"
+    ):
         record(S, "D12", "PASS", "[migration] canonical_id FK/column DDL exists")
     else:
         record(S, "D12", "FAIL", "canonical_id FK not found")
@@ -572,46 +739,80 @@ def run_gate3() -> None:
     S = "Gate 3"
 
     # P1: salary_predicted_max column
-    sql_or_mig(S, "P1",
-               "SELECT column_name FROM information_schema.columns WHERE table_name='jobs' AND column_name='salary_predicted_max';",
-               lambda r: is_ok(r) and len(r) > 0,
-               "salary_predicted_max exists", "salary_predicted_max missing",
-               "012", r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?salary_predicted_max",
-               "salary_predicted_max DDL in migration 012")
+    sql_or_mig(
+        S,
+        "P1",
+        "SELECT column_name FROM information_schema.columns WHERE table_name='jobs' AND column_name='salary_predicted_max';",
+        lambda r: is_ok(r) and len(r) > 0,
+        "salary_predicted_max exists",
+        "salary_predicted_max missing",
+        "012",
+        r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?salary_predicted_max",
+        "salary_predicted_max DDL in migration 012",
+    )
 
     # P2: Rollback
     down_012 = MIGRATIONS_DIR / "20260301000012_salary_company_down.sql"
     if down_012.exists() and down_012.stat().st_size > 0:
-        record(S, "P2", "PASS", f"[rollback] {down_012.name} ({down_012.stat().st_size} bytes)")
+        record(
+            S,
+            "P2",
+            "PASS",
+            f"[rollback] {down_012.name} ({down_012.stat().st_size} bytes)",
+        )
     else:
         record(S, "P2", "SKIP", "Rollback file missing or empty")
 
     # P3: sic_industry_map table + 21 rows seed
     r = run_sql("SELECT count(*) as cnt FROM sic_industry_map;")
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         record(S, "P3", "PASS" if cnt == 21 else "FAIL", f"{cnt} rows (need 21)")
-    elif mig_has("012", r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?sic_industry_map"):
+    elif mig_has(
+        "012",
+        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?sic_industry_map",
+    ):
         # Count INSERT rows
         inserts = mig_count("012", r"INSERT\s+INTO\s+sic_industry_map")
         # Or count individual VALUES tuples
         values = mig_count("012", r"\('[A-U]'")
         cnt_found = max(inserts, values)
         if cnt_found >= 21:
-            record(S, "P3", "PASS", f"[migration] sic_industry_map DDL + {cnt_found} seed rows")
+            record(
+                S,
+                "P3",
+                "PASS",
+                f"[migration] sic_industry_map DDL + {cnt_found} seed rows",
+            )
         elif cnt_found > 0:
-            record(S, "P3", "PASS", f"[migration] sic_industry_map DDL + seed ({cnt_found} rows found)")
+            record(
+                S,
+                "P3",
+                "PASS",
+                f"[migration] sic_industry_map DDL + seed ({cnt_found} rows found)",
+            )
         else:
             record(S, "P3", "PASS", "[migration] sic_industry_map DDL exists")
     else:
         record(S, "P3", "FAIL", "sic_industry_map not found")
 
     # P4: SIC mapping J -> Technology
-    r = run_sql("SELECT internal_category FROM sic_industry_map WHERE sic_section = 'J';")
+    r = run_sql(
+        "SELECT internal_category FROM sic_industry_map WHERE sic_section = 'J';"
+    )
     if not is_blocked(r):
         if is_ok(r) and len(rows(r)) > 0:
             val = rows(r)[0].get("internal_category")
-            record(S, "P4", "PASS" if val == "Technology" else "FAIL", f"sic_section J -> {val}")
+            record(
+                S,
+                "P4",
+                "PASS" if val == "Technology" else "FAIL",
+                f"sic_section J -> {val}",
+            )
         else:
             record(S, "P4", "FAIL", "Not found")
     elif mig_has("012", r"'J'.*'Technology'|'Technology'.*'J'"):
@@ -620,28 +821,65 @@ def run_gate3() -> None:
         # Check companies_house.py for SIC mapping
         ch = SRC_DIR / "companies_house.py"
         if ch.exists() and file_has(ch, r"['\"]J['\"].*[Tt]echnology"):
-            record(S, "P4", "PASS", "[code] J -> Technology mapping in companies_house.py")
+            record(
+                S, "P4", "PASS", "[code] J -> Technology mapping in companies_house.py"
+            )
         else:
             record(S, "P4", "FAIL", "J -> Technology mapping not found")
 
     # P5-P8: pytest — salary tests
     salary_features_pass = pytest_file_passes("test_salary_features.py")
-    record(S, "P5", "PASS" if salary_features_pass else "FAIL",
-           "[pytest] test_salary_features.py passes" if salary_features_pass else "test_salary_features.py failed")
+    record(
+        S,
+        "P5",
+        "PASS" if salary_features_pass else "FAIL",
+        "[pytest] test_salary_features.py passes"
+        if salary_features_pass
+        else "test_salary_features.py failed",
+    )
 
     salary_trainer_pass = pytest_file_passes("test_salary_trainer.py")
-    record(S, "P6", "PASS" if salary_trainer_pass else "FAIL",
-           "[pytest] test_salary_trainer.py passes (model trains)" if salary_trainer_pass else "test_salary_trainer.py failed")
-    record(S, "P7", "PASS" if salary_trainer_pass else "FAIL",
-           "[pytest] test_salary_trainer.py passes (MAE acceptable)" if salary_trainer_pass else "test_salary_trainer.py failed")
-    record(S, "P8", "PASS" if salary_trainer_pass else "FAIL",
-           "[pytest] test_salary_trainer.py passes (prediction sanity)" if salary_trainer_pass else "test_salary_trainer.py failed")
+    record(
+        S,
+        "P6",
+        "PASS" if salary_trainer_pass else "FAIL",
+        "[pytest] test_salary_trainer.py passes (model trains)"
+        if salary_trainer_pass
+        else "test_salary_trainer.py failed",
+    )
+    record(
+        S,
+        "P7",
+        "PASS" if salary_trainer_pass else "FAIL",
+        "[pytest] test_salary_trainer.py passes (MAE acceptable)"
+        if salary_trainer_pass
+        else "test_salary_trainer.py failed",
+    )
+    record(
+        S,
+        "P8",
+        "PASS" if salary_trainer_pass else "FAIL",
+        "[pytest] test_salary_trainer.py passes (prediction sanity)"
+        if salary_trainer_pass
+        else "test_salary_trainer.py failed",
+    )
 
     # P9: salary_predicted_max column + prediction logic exists
-    r = run_sql("SELECT count(*) as cnt FROM jobs WHERE salary_predicted_max IS NOT NULL;")
+    r = run_sql(
+        "SELECT count(*) as cnt FROM jobs WHERE salary_predicted_max IS NOT NULL;"
+    )
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
-        record(S, "P9", "PASS" if cnt > 0 else "SKIP", f"{cnt} predicted" if cnt > 0 else "Needs prediction via Modal")
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
+        record(
+            S,
+            "P9",
+            "PASS" if cnt > 0 else "SKIP",
+            f"{cnt} predicted" if cnt > 0 else "Needs prediction via Modal",
+        )
     else:
         st = SRC_DIR / "salary_trainer.py"
         if st.exists() and file_has(st, r"predict|XGB"):
@@ -650,7 +888,9 @@ def run_gate3() -> None:
             record(S, "P9", "SKIP", "Needs prediction via Modal")
 
     # P10: salary_confidence column
-    r = run_sql("SELECT DISTINCT salary_confidence FROM jobs WHERE salary_predicted_max IS NOT NULL LIMIT 10;")
+    r = run_sql(
+        "SELECT DISTINCT salary_confidence FROM jobs WHERE salary_predicted_max IS NOT NULL LIMIT 10;"
+    )
     if not is_blocked(r):
         if is_ok(r) and len(rows(r)) > 0:
             record(S, "P10", "PASS", f"{len(rows(r))} distinct confidence values")
@@ -663,28 +903,66 @@ def run_gate3() -> None:
 
     # P11-P13: Companies House pytest
     ch_pass = pytest_file_passes("test_companies_house.py")
-    record(S, "P11", "PASS" if ch_pass else "FAIL",
-           "[pytest] test_companies_house.py passes (CH search)" if ch_pass else "test_companies_house.py failed")
-    record(S, "P12", "PASS" if ch_pass else "FAIL",
-           "[pytest] test_companies_house.py passes (SIC to section)" if ch_pass else "test_companies_house.py failed")
-    record(S, "P13", "PASS" if ch_pass else "FAIL",
-           "[pytest] test_companies_house.py passes (rate limit)" if ch_pass else "test_companies_house.py failed")
+    record(
+        S,
+        "P11",
+        "PASS" if ch_pass else "FAIL",
+        "[pytest] test_companies_house.py passes (CH search)"
+        if ch_pass
+        else "test_companies_house.py failed",
+    )
+    record(
+        S,
+        "P12",
+        "PASS" if ch_pass else "FAIL",
+        "[pytest] test_companies_house.py passes (SIC to section)"
+        if ch_pass
+        else "test_companies_house.py failed",
+    )
+    record(
+        S,
+        "P13",
+        "PASS" if ch_pass else "FAIL",
+        "[pytest] test_companies_house.py passes (rate limit)"
+        if ch_pass
+        else "test_companies_house.py failed",
+    )
 
     # P14: Companies enriched (enriched_at column)
     r = run_sql("SELECT count(*) as cnt FROM companies WHERE enriched_at IS NOT NULL;")
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
-        record(S, "P14", "PASS" if cnt > 0 else "SKIP", f"{cnt} enriched" if cnt > 0 else "Needs enrichment via Modal")
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
+        record(
+            S,
+            "P14",
+            "PASS" if cnt > 0 else "SKIP",
+            f"{cnt} enriched" if cnt > 0 else "Needs enrichment via Modal",
+        )
     elif mig_has("012", r"enriched_at"):
         record(S, "P14", "PASS", "[migration] enriched_at column DDL exists")
     else:
         record(S, "P14", "FAIL", "enriched_at column not found")
 
     # P15: sic_codes column
-    r = run_sql("SELECT count(*) as cnt FROM companies WHERE sic_codes IS NOT NULL AND array_length(sic_codes, 1) > 0;")
+    r = run_sql(
+        "SELECT count(*) as cnt FROM companies WHERE sic_codes IS NOT NULL AND array_length(sic_codes, 1) > 0;"
+    )
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
-        record(S, "P15", "PASS" if cnt > 0 else "SKIP", f"{cnt} with SIC codes" if cnt > 0 else "Needs enrichment via Modal")
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
+        record(
+            S,
+            "P15",
+            "PASS" if cnt > 0 else "SKIP",
+            f"{cnt} with SIC codes" if cnt > 0 else "Needs enrichment via Modal",
+        )
     elif mig_has("012", r"sic_codes"):
         record(S, "P15", "PASS", "[migration] sic_codes column DDL exists")
     else:
@@ -717,28 +995,44 @@ def run_gate4() -> None:
     S = "Gate 4"
 
     # R1: user_profiles table
-    sql_or_mig(S, "R1",
-               "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='user_profiles';",
-               lambda r: is_ok(r) and len(r) > 0,
-               "user_profiles exists", "user_profiles missing",
-               "013", r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?user_profiles",
-               "user_profiles DDL in migration 013")
+    sql_or_mig(
+        S,
+        "R1",
+        "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='user_profiles';",
+        lambda r: is_ok(r) and len(r) > 0,
+        "user_profiles exists",
+        "user_profiles missing",
+        "013",
+        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?user_profiles",
+        "user_profiles DDL in migration 013",
+    )
 
     # R2: Rollback
     down_013 = MIGRATIONS_DIR / "20260301000013_user_profiles_search_v2_down.sql"
     if down_013.exists() and down_013.stat().st_size > 0:
-        record(S, "R2", "PASS", f"[rollback] {down_013.name} ({down_013.stat().st_size} bytes)")
+        record(
+            S,
+            "R2",
+            "PASS",
+            f"[rollback] {down_013.name} ({down_013.stat().st_size} bytes)",
+        )
     else:
         record(S, "R2", "SKIP", "Rollback file missing or empty")
 
     # R3: user_profiles columns (profile_embedding)
-    r = run_sql("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='user_profiles' ORDER BY ordinal_position;")
+    r = run_sql(
+        "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='user_profiles' ORDER BY ordinal_position;"
+    )
     if not is_blocked(r):
         if is_ok(r) and len(rows(r)) > 0:
             cols = [row.get("column_name") for row in rows(r)]
             has_emb = "profile_embedding" in cols
-            record(S, "R3", "PASS" if has_emb else "FAIL",
-                   f"{len(cols)} columns, profile_embedding={'found' if has_emb else 'MISSING'}")
+            record(
+                S,
+                "R3",
+                "PASS" if has_emb else "FAIL",
+                f"{len(cols)} columns, profile_embedding={'found' if has_emb else 'MISSING'}",
+            )
         else:
             record(S, "R3", "FAIL", "user_profiles not found")
     elif mig_has("013", r"profile_embedding"):
@@ -747,13 +1041,24 @@ def run_gate4() -> None:
         record(S, "R3", "FAIL", "profile_embedding not found")
 
     # R4: RLS policies on user_profiles
-    r = run_sql("SELECT count(*) as cnt FROM pg_policies WHERE tablename = 'user_profiles';")
+    r = run_sql(
+        "SELECT count(*) as cnt FROM pg_policies WHERE tablename = 'user_profiles';"
+    )
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         record(S, "R4", "PASS" if cnt > 0 else "FAIL", f"{cnt} RLS policies")
-    elif mig_has("013", r"CREATE\s+POLICY.*user_profiles|ENABLE\s+ROW\s+LEVEL\s+SECURITY.*user_profiles|user_profiles.*ENABLE\s+ROW"):
+    elif mig_has(
+        "013",
+        r"CREATE\s+POLICY.*user_profiles|ENABLE\s+ROW\s+LEVEL\s+SECURITY.*user_profiles|user_profiles.*ENABLE\s+ROW",
+    ):
         rls_count = mig_count("013", r"CREATE\s+POLICY")
-        record(S, "R4", "PASS", f"[migration] {rls_count} RLS policies in migration 013")
+        record(
+            S, "R4", "PASS", f"[migration] {rls_count} RLS policies in migration 013"
+        )
     else:
         record(S, "R4", "FAIL", "RLS policies not found for user_profiles")
 
@@ -770,19 +1075,27 @@ def run_gate4() -> None:
         record(S, "R5", "FAIL", "search_jobs_v2 function not found")
 
     # R6: search_jobs_v2 has exclude_duplicates param
-    r = run_sql("SELECT * FROM search_jobs_v2(query_text := 'developer', exclude_duplicates := true) LIMIT 5;")
+    r = run_sql(
+        "SELECT * FROM search_jobs_v2(query_text := 'developer', exclude_duplicates := true) LIMIT 5;"
+    )
     if not is_blocked(r):
         if is_ok(r):
-            record(S, "R6", "PASS", f"Returned {len(rows(r))} results (exclude_duplicates)")
+            record(
+                S, "R6", "PASS", f"Returned {len(rows(r))} results (exclude_duplicates)"
+            )
         else:
             record(S, "R6", "FAIL", "search_jobs_v2 with filters error")
     elif mig_has("013", r"exclude_duplicates"):
-        record(S, "R6", "PASS", "[migration] exclude_duplicates param in search_jobs_v2")
+        record(
+            S, "R6", "PASS", "[migration] exclude_duplicates param in search_jobs_v2"
+        )
     else:
         record(S, "R6", "FAIL", "exclude_duplicates param not found")
 
     # R7: search_jobs_v2 has skill_filters param
-    r = run_sql("SELECT * FROM search_jobs_v2(skill_filters := ARRAY['Python', 'AWS']) LIMIT 5;")
+    r = run_sql(
+        "SELECT * FROM search_jobs_v2(skill_filters := ARRAY['Python', 'AWS']) LIMIT 5;"
+    )
     if not is_blocked(r):
         if is_ok(r):
             record(S, "R7", "PASS", f"Returned {len(rows(r))} results (skill_filters)")
@@ -795,32 +1108,66 @@ def run_gate4() -> None:
 
     # R8-R10: Cross-encoder pytest
     reranker_pass = pytest_file_passes("test_reranker.py")
-    record(S, "R8", "PASS" if reranker_pass else "FAIL",
-           "[pytest] test_reranker.py passes (loads)" if reranker_pass else "test_reranker.py failed")
-    record(S, "R9", "PASS" if reranker_pass else "FAIL",
-           "[pytest] test_reranker.py passes (relevance)" if reranker_pass else "test_reranker.py failed")
-    record(S, "R10", "PASS" if reranker_pass else "FAIL",
-           "[pytest] test_reranker.py passes (speed)" if reranker_pass else "test_reranker.py failed")
+    record(
+        S,
+        "R8",
+        "PASS" if reranker_pass else "FAIL",
+        "[pytest] test_reranker.py passes (loads)"
+        if reranker_pass
+        else "test_reranker.py failed",
+    )
+    record(
+        S,
+        "R9",
+        "PASS" if reranker_pass else "FAIL",
+        "[pytest] test_reranker.py passes (relevance)"
+        if reranker_pass
+        else "test_reranker.py failed",
+    )
+    record(
+        S,
+        "R10",
+        "PASS" if reranker_pass else "FAIL",
+        "[pytest] test_reranker.py passes (speed)"
+        if reranker_pass
+        else "test_reranker.py failed",
+    )
 
     # R11: Re-ranking quality — genuine SKIP (human judgment)
     record(S, "R11", "SKIP", "Requires 50 manual query comparisons (human task)")
 
     # R12: Profile embedding
     profile_pass = pytest_file_passes("test_profile_handler.py")
-    record(S, "R12", "PASS" if profile_pass else "FAIL",
-           "[pytest] test_profile_handler.py passes" if profile_pass else "test_profile_handler.py failed")
+    record(
+        S,
+        "R12",
+        "PASS" if profile_pass else "FAIL",
+        "[pytest] test_profile_handler.py passes"
+        if profile_pass
+        else "test_profile_handler.py failed",
+    )
 
     # R13: Profile personalization
     search_orch = SRC_DIR / "search_orchestrator.py"
     if search_orch.exists() and file_has(search_orch, r"profile.*embedd|personali"):
-        record(S, "R13", "PASS", "[code] search_orchestrator.py has profile personalization logic")
+        record(
+            S,
+            "R13",
+            "PASS",
+            "[code] search_orchestrator.py has profile personalization logic",
+        )
     else:
         record(S, "R13", "SKIP", "Profile personalization requires live data")
 
     # R14: Graceful degradation
     search_pass = pytest_file_passes("test_search_orchestrator.py")
     if search_pass:
-        record(S, "R14", "PASS", "[pytest] test_search_orchestrator.py passes (graceful degradation)")
+        record(
+            S,
+            "R14",
+            "PASS",
+            "[pytest] test_search_orchestrator.py passes (graceful degradation)",
+        )
     else:
         rr = SRC_DIR / "reranker.py"
         if rr.exists() and file_has(rr, r"except|fallback|graceful"):
@@ -835,13 +1182,19 @@ def run_gate4() -> None:
     r = run_sql("SELECT * FROM search_jobs(query_text := 'developer') LIMIT 5;")
     if not is_blocked(r):
         if is_ok(r):
-            record(S, "R16", "PASS", f"Phase 1 search_jobs returned {len(rows(r))} results")
+            record(
+                S, "R16", "PASS", f"Phase 1 search_jobs returned {len(rows(r))} results"
+            )
         else:
             record(S, "R16", "FAIL", "search_jobs() error")
     else:
         mig_008 = MIGRATIONS_DIR / "20260301000008_search_jobs.sql"
-        if mig_008.exists() and file_has(mig_008, r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+search_jobs"):
-            record(S, "R16", "PASS", "[migration] search_jobs function preserved in 008")
+        if mig_008.exists() and file_has(
+            mig_008, r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+search_jobs"
+        ):
+            record(
+                S, "R16", "PASS", "[migration] search_jobs function preserved in 008"
+            )
         else:
             record(S, "R16", "SKIP", "Cannot verify Phase 1 search without DB")
 
@@ -856,9 +1209,16 @@ def run_gate4() -> None:
     ruff_errors = run_ruff()
     mypy_errors = run_mypy()
     if ruff_errors == 0 and mypy_errors == 0:
-        record(S, "R18", "PASS", f"[tools] ruff {ruff_errors} errors, mypy {mypy_errors} errors")
+        record(
+            S,
+            "R18",
+            "PASS",
+            f"[tools] ruff {ruff_errors} errors, mypy {mypy_errors} errors",
+        )
     else:
-        record(S, "R18", "FAIL", f"ruff {ruff_errors} errors, mypy {mypy_errors} errors")
+        record(
+            S, "R18", "FAIL", f"ruff {ruff_errors} errors, mypy {mypy_errors} errors"
+        )
 
 
 # ── Test Search Queries (Q1-Q15) ──
@@ -866,20 +1226,59 @@ def run_search_queries() -> None:
     print("\n=== Test Search Queries (Q1-Q15) ===")
 
     queries = [
-        ("Q1", "SELECT * FROM search_jobs_v2(query_text := 'Python developer') LIMIT 5;"),
-        ("Q2", "SELECT * FROM search_jobs_v2(skill_filters := ARRAY['Python', 'AWS']) LIMIT 5;"),
-        ("Q3", "SELECT * FROM search_jobs_v2(query_text := 'analyst', category_filter := 'Finance') LIMIT 5;"),
-        ("Q4", "SELECT * FROM search_jobs_v2(query_text := 'nurse', exclude_duplicates := true) LIMIT 5;"),
-        ("Q5", "SELECT * FROM search_jobs_v2(query_text := 'marketing manager', min_salary := 40000) LIMIT 5;"),
-        ("Q6", "SELECT * FROM search_jobs_v2(query_text := 'graduate', max_salary := 30000) LIMIT 5;"),
-        ("Q7", "SELECT * FROM search_jobs_v2(query_text := 'DevOps', include_remote := true, skill_filters := ARRAY['Docker', 'Kubernetes']) LIMIT 5;"),
-        ("Q8", "SELECT * FROM search_jobs_v2(query_text := 'senior data scientist machine learning') LIMIT 5;"),
-        ("Q9", "SELECT * FROM search_jobs_v2(query_text := 'CIPD qualified HR manager') LIMIT 5;"),
+        (
+            "Q1",
+            "SELECT * FROM search_jobs_v2(query_text := 'Python developer') LIMIT 5;",
+        ),
+        (
+            "Q2",
+            "SELECT * FROM search_jobs_v2(skill_filters := ARRAY['Python', 'AWS']) LIMIT 5;",
+        ),
+        (
+            "Q3",
+            "SELECT * FROM search_jobs_v2(query_text := 'analyst', category_filter := 'Finance') LIMIT 5;",
+        ),
+        (
+            "Q4",
+            "SELECT * FROM search_jobs_v2(query_text := 'nurse', exclude_duplicates := true) LIMIT 5;",
+        ),
+        (
+            "Q5",
+            "SELECT * FROM search_jobs_v2(query_text := 'marketing manager', min_salary := 40000) LIMIT 5;",
+        ),
+        (
+            "Q6",
+            "SELECT * FROM search_jobs_v2(query_text := 'graduate', max_salary := 30000) LIMIT 5;",
+        ),
+        (
+            "Q7",
+            "SELECT * FROM search_jobs_v2(query_text := 'DevOps', include_remote := true, skill_filters := ARRAY['Docker', 'Kubernetes']) LIMIT 5;",
+        ),
+        (
+            "Q8",
+            "SELECT * FROM search_jobs_v2(query_text := 'senior data scientist machine learning') LIMIT 5;",
+        ),
+        (
+            "Q9",
+            "SELECT * FROM search_jobs_v2(query_text := 'CIPD qualified HR manager') LIMIT 5;",
+        ),
         ("Q10", "SELECT * FROM search_jobs_v2(query_text := 'developer') LIMIT 5;"),
-        ("Q11", "SELECT * FROM search_jobs_v2(category_filter := 'Healthcare', min_salary := 30000) LIMIT 5;"),
-        ("Q12", "SELECT * FROM search_jobs_v2(query_text := 'softwar engeneer') LIMIT 5;"),
-        ("Q13", "SELECT * FROM search_jobs_v2(query_text := 'SIA door supervisor') LIMIT 5;"),
-        ("Q14", "SELECT * FROM search_jobs_v2(query_text := 'accountant', min_salary := 50000, category_filter := 'Finance', exclude_duplicates := true) LIMIT 5;"),
+        (
+            "Q11",
+            "SELECT * FROM search_jobs_v2(category_filter := 'Healthcare', min_salary := 30000) LIMIT 5;",
+        ),
+        (
+            "Q12",
+            "SELECT * FROM search_jobs_v2(query_text := 'softwar engeneer') LIMIT 5;",
+        ),
+        (
+            "Q13",
+            "SELECT * FROM search_jobs_v2(query_text := 'SIA door supervisor') LIMIT 5;",
+        ),
+        (
+            "Q14",
+            "SELECT * FROM search_jobs_v2(query_text := 'accountant', min_salary := 50000, category_filter := 'Finance', exclude_duplicates := true) LIMIT 5;",
+        ),
     ]
 
     # Extract unique params from queries to verify against function signature
@@ -900,7 +1299,12 @@ def run_search_queries() -> None:
             params_in_query = re.findall(r"(\w+)\s*:=", sql)
             all_found = all(mig_has("013", rf"{p}") for p in params_in_query)
             if all_found:
-                record("Queries", qid, "PASS", f"[migration] search_jobs_v2 has params: {', '.join(params_in_query)}")
+                record(
+                    "Queries",
+                    qid,
+                    "PASS",
+                    f"[migration] search_jobs_v2 has params: {', '.join(params_in_query)}",
+                )
             else:
                 missing = [p for p in params_in_query if not mig_has("013", rf"{p}")]
                 record("Queries", qid, "FAIL", f"Missing params: {', '.join(missing)}")
@@ -911,8 +1315,14 @@ def run_search_queries() -> None:
         record("Queries", "Q15", "PASS", "[pytest] test_search_quality.py passes")
     else:
         so_pass = pytest_file_passes("test_search_orchestrator.py")
-        record("Queries", "Q15", "PASS" if so_pass else "FAIL",
-               "[pytest] test_search_orchestrator.py passes" if so_pass else "Graceful degradation tests failed")
+        record(
+            "Queries",
+            "Q15",
+            "PASS" if so_pass else "FAIL",
+            "[pytest] test_search_orchestrator.py passes"
+            if so_pass
+            else "Graceful degradation tests failed",
+        )
 
 
 # ── Go/No-Go (G1-G30) ──
@@ -923,13 +1333,21 @@ def run_go_nogo() -> None:
     # G1: Full migration chain (all 13 files exist)
     r = run_sql("SELECT count(*) as cnt FROM pg_tables WHERE schemaname='public';")
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         record(S, "G1", "PASS" if cnt >= 8 else "FAIL", f"{cnt} public tables")
     else:
         all_migs = list(MIGRATIONS_DIR.glob("*.sql"))
         up_migs = [m for m in all_migs if "_down" not in m.name]
-        record(S, "G1", "PASS" if len(up_migs) >= 13 else "FAIL",
-               f"[files] {len(up_migs)} migration files (need >= 13)")
+        record(
+            S,
+            "G1",
+            "PASS" if len(up_migs) >= 13 else "FAIL",
+            f"[files] {len(up_migs)} migration files (need >= 13)",
+        )
 
     # G2: Rollbacks exist for all Phase 2
     down_files = [
@@ -942,7 +1360,9 @@ def run_go_nogo() -> None:
     if all_exist:
         record(S, "G2", "PASS", "[files] All 4 Phase 2 rollback files exist")
     else:
-        missing = [f.name for f in down_files if not f.exists() or f.stat().st_size == 0]
+        missing = [
+            f.name for f in down_files if not f.exists() or f.stat().st_size == 0
+        ]
         record(S, "G2", "FAIL", f"Missing rollbacks: {', '.join(missing)}")
 
     # G3: Phase 1 search_jobs preserved
@@ -959,12 +1379,19 @@ def run_go_nogo() -> None:
             if mig_has("013", r"DROP\s+FUNCTION\s+search_jobs[^_]"):
                 record(S, "G3", "FAIL", "Migration 013 drops search_jobs!")
             else:
-                record(S, "G3", "PASS", "[migration] search_jobs preserved (not dropped in 013)")
+                record(
+                    S,
+                    "G3",
+                    "PASS",
+                    "[migration] search_jobs preserved (not dropped in 013)",
+                )
         else:
             record(S, "G3", "FAIL", "search_jobs migration 008 not found")
 
     # G4: Phase 2 search_jobs_v2 works
-    r = run_sql("SELECT * FROM search_jobs_v2(query_text := 'developer', exclude_duplicates := true) LIMIT 5;")
+    r = run_sql(
+        "SELECT * FROM search_jobs_v2(query_text := 'developer', exclude_duplicates := true) LIMIT 5;"
+    )
     if not is_blocked(r):
         if is_ok(r):
             record(S, "G4", "PASS", "search_jobs_v2() works")
@@ -988,14 +1415,23 @@ def run_go_nogo() -> None:
     ruff_errors = run_ruff()
     mypy_errors = run_mypy()
     if ruff_errors == 0 and mypy_errors == 0:
-        record(S, "G6", "PASS", f"[tools] ruff {ruff_errors} errors, mypy {mypy_errors} errors")
+        record(
+            S,
+            "G6",
+            "PASS",
+            f"[tools] ruff {ruff_errors} errors, mypy {mypy_errors} errors",
+        )
     else:
         record(S, "G6", "FAIL", f"ruff {ruff_errors} errors, mypy {mypy_errors} errors")
 
     # G7: job_skills table exists
     r = run_sql("SELECT count(*) as cnt FROM job_skills;")
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         record(S, "G7", "PASS" if cnt > 0 else "SKIP", f"{cnt} job_skills rows")
     else:
         mig_002 = MIGRATIONS_DIR / "20260301000002_core_tables.sql"
@@ -1007,7 +1443,11 @@ def run_go_nogo() -> None:
     # G8: Dedup infrastructure
     r = run_sql("SELECT count(*) as cnt FROM jobs WHERE is_duplicate = TRUE;")
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         record(S, "G8", "PASS" if cnt > 0 else "SKIP", f"{cnt} duplicates")
     elif mig_has("011", r"is_duplicate"):
         record(S, "G8", "PASS", "[migration] is_duplicate column DDL exists")
@@ -1026,7 +1466,11 @@ def run_go_nogo() -> None:
     # G10: Companies enrichment infrastructure
     r = run_sql("SELECT count(*) as cnt FROM companies WHERE enriched_at IS NOT NULL;")
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         record(S, "G10", "PASS" if cnt > 0 else "SKIP", f"{cnt} enriched companies")
     else:
         eo = SRC_DIR / "enrichment_orchestrator.py"
@@ -1039,13 +1483,23 @@ def run_go_nogo() -> None:
 
     # G11: Cross-encoder functional
     rr_pass = pytest_file_passes("test_reranker.py")
-    record(S, "G11", "PASS" if rr_pass else "FAIL",
-           "[pytest] test_reranker.py passes" if rr_pass else "test_reranker.py failed")
+    record(
+        S,
+        "G11",
+        "PASS" if rr_pass else "FAIL",
+        "[pytest] test_reranker.py passes" if rr_pass else "test_reranker.py failed",
+    )
 
     # G12: RLS policies on user_profiles
-    r = run_sql("SELECT count(*) as cnt FROM pg_policies WHERE tablename = 'user_profiles';")
+    r = run_sql(
+        "SELECT count(*) as cnt FROM pg_policies WHERE tablename = 'user_profiles';"
+    )
     if not is_blocked(r):
-        cnt = int(rows(r)[0]["cnt"]) if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None else 0
+        cnt = (
+            int(rows(r)[0]["cnt"])
+            if is_ok(r) and rows(r) and rows(r)[0].get("cnt") is not None
+            else 0
+        )
         record(S, "G12", "PASS" if cnt > 0 else "FAIL", f"{cnt} RLS policies")
     elif mig_has("013", r"CREATE\s+POLICY"):
         rls_count = mig_count("013", r"CREATE\s+POLICY")
@@ -1054,7 +1508,9 @@ def run_go_nogo() -> None:
         record(S, "G12", "FAIL", "No RLS policies found")
 
     # G13: Performance baseline — EXPLAIN ANALYZE needs live DB
-    r = run_sql("EXPLAIN ANALYZE SELECT * FROM search_jobs_v2(query_text := 'developer') LIMIT 5;")
+    r = run_sql(
+        "EXPLAIN ANALYZE SELECT * FROM search_jobs_v2(query_text := 'developer') LIMIT 5;"
+    )
     if not is_blocked(r):
         if is_ok(r):
             record(S, "G13", "PASS", "EXPLAIN ANALYZE executed")
@@ -1093,7 +1549,9 @@ def run_slas() -> None:
     print("\n=== Performance SLAs (S1-S9) ===")
 
     # S1: search_jobs_v2 P95
-    r = run_sql("EXPLAIN ANALYZE SELECT * FROM search_jobs_v2(query_text := 'developer') LIMIT 5;")
+    r = run_sql(
+        "EXPLAIN ANALYZE SELECT * FROM search_jobs_v2(query_text := 'developer') LIMIT 5;"
+    )
     if not is_blocked(r):
         if is_ok(r):
             record("SLAs", "S1", "PASS", "EXPLAIN ANALYZE ran")
@@ -1117,7 +1575,15 @@ def print_scorecard() -> tuple[int, int, int]:
     total_fail = 0
     total_skip = 0
 
-    for section in ["Gate 1", "Gate 2", "Gate 3", "Gate 4", "Queries", "Go/No-Go", "SLAs"]:
+    for section in [
+        "Gate 1",
+        "Gate 2",
+        "Gate 3",
+        "Gate 4",
+        "Queries",
+        "Go/No-Go",
+        "SLAs",
+    ]:
         checks = RESULTS.get(section, [])
         p = sum(1 for _, s, _ in checks if s == "PASS")
         f = sum(1 for _, s, _ in checks if s == "FAIL")
@@ -1131,7 +1597,9 @@ def print_scorecard() -> tuple[int, int, int]:
     print("\u2500" * 60)
     total = total_pass + total_fail + total_skip
     overall = "FAIL" if total_fail > 0 else "PASS"
-    print(f"  {'TOTAL':20s}: {total_pass:2d} PASS, {total_skip:2d} SKIP, {total_fail:2d} FAIL  [{overall}]")
+    print(
+        f"  {'TOTAL':20s}: {total_pass:2d} PASS, {total_skip:2d} SKIP, {total_fail:2d} FAIL  [{overall}]"
+    )
     print(f"  Out of {total} verification items")
     print("=" * 60)
 

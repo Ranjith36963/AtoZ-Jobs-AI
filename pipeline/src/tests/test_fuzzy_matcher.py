@@ -1,5 +1,8 @@
 """Tests for fuzzy duplicate matching (SPEC.md §4.2-4.3, Gates D3-D10)."""
 
+from hypothesis import given, settings
+from hypothesis import strategies as st
+
 from src.dedup.fuzzy_matcher import (
     DUPLICATE_THRESHOLD,
     compute_local_duplicate_score,
@@ -128,8 +131,20 @@ class TestPickCanonical:
         assert duplicate_id == 2
 
     def test_equal_richness_keeps_first(self) -> None:
-        job_a = {"id": 1, "salary_annual_max": None, "location_city": None, "description_plain": "", "embedding": None}
-        job_b = {"id": 2, "salary_annual_max": None, "location_city": None, "description_plain": "", "embedding": None}
+        job_a = {
+            "id": 1,
+            "salary_annual_max": None,
+            "location_city": None,
+            "description_plain": "",
+            "embedding": None,
+        }
+        job_b = {
+            "id": 2,
+            "salary_annual_max": None,
+            "location_city": None,
+            "description_plain": "",
+            "embedding": None,
+        }
         canonical_id, duplicate_id = pick_canonical(job_a, job_b)
         assert canonical_id == 1
         assert duplicate_id == 2
@@ -148,3 +163,69 @@ class TestPickCanonical:
         job_b = {"id": 2, "description_plain": "A" * 200, "salary_annual_max": 50000}
         canonical_id, _dup = pick_canonical(job_a, job_b)
         assert canonical_id == 2
+
+
+class TestPropertyBased:
+    """Hypothesis property-based tests for parsers (test-standards.md §4)."""
+
+    @given(
+        title_sim=st.floats(min_value=0.0, max_value=1.0),
+        company_match=st.booleans(),
+        location_km=st.floats(min_value=0.0, max_value=1000.0),
+        salary_overlap=st.floats(min_value=0.0, max_value=1.0),
+        date_diff_days=st.integers(min_value=0, max_value=365),
+    )
+    @settings(max_examples=200)
+    def test_score_always_bounded(
+        self,
+        title_sim: float,
+        company_match: bool,
+        location_km: float,
+        salary_overlap: float,
+        date_diff_days: int,
+    ) -> None:
+        """Score must always be 0.0 ≤ score ≤ 1.0 for any valid input."""
+        score = compute_local_duplicate_score(
+            title_sim,
+            company_match,
+            location_km,
+            salary_overlap,
+            date_diff_days,
+        )
+        assert 0.0 <= score <= 1.0 + 1e-9  # float tolerance
+
+    @given(
+        title_sim=st.floats(min_value=0.0, max_value=1.0),
+        salary_overlap=st.floats(min_value=0.0, max_value=1.0),
+    )
+    @settings(max_examples=100)
+    def test_max_possible_score_is_one(
+        self, title_sim: float, salary_overlap: float
+    ) -> None:
+        """Max signal (all True, close, recent) never exceeds 1.0."""
+        score = compute_local_duplicate_score(
+            title_sim=title_sim,
+            company_match=True,
+            location_km=0.0,
+            salary_overlap=salary_overlap,
+            date_diff_days=0,
+        )
+        assert score <= 1.0 + 1e-9
+
+    @given(
+        title_sim=st.floats(min_value=0.0, max_value=1.0),
+        salary_overlap=st.floats(min_value=0.0, max_value=1.0),
+        date_diff_days=st.integers(min_value=0, max_value=365),
+    )
+    @settings(max_examples=100)
+    def test_score_never_raises(
+        self, title_sim: float, salary_overlap: float, date_diff_days: int
+    ) -> None:
+        """Function never raises on arbitrary valid input."""
+        compute_local_duplicate_score(
+            title_sim,
+            False,
+            50.0,
+            salary_overlap,
+            date_diff_days,
+        )

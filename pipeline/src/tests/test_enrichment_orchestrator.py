@@ -21,8 +21,15 @@ class TestEnrichCompanies:
         # Update call
         mock_db.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock()
 
-        with patch("src.enrichment.orchestrator.search_company", new_callable=AsyncMock) as mock_search, \
-             patch("src.enrichment.orchestrator.get_company_profile", new_callable=AsyncMock) as mock_profile:
+        with (
+            patch(
+                "src.enrichment.orchestrator.search_company", new_callable=AsyncMock
+            ) as mock_search,
+            patch(
+                "src.enrichment.orchestrator.get_company_profile",
+                new_callable=AsyncMock,
+            ) as mock_profile,
+        ):
             mock_search.return_value = {
                 "company_number": "02263951",
                 "title": "GOLDMAN SACHS INTERNATIONAL",
@@ -59,7 +66,9 @@ class TestEnrichCompanies:
             {"id": 1, "name": "Totally Fake Company XYZ"}
         ]
 
-        with patch("src.enrichment.orchestrator.search_company", new_callable=AsyncMock) as mock_search:
+        with patch(
+            "src.enrichment.orchestrator.search_company", new_callable=AsyncMock
+        ) as mock_search:
             mock_search.return_value = None
 
             result = await enrich_companies(
@@ -99,7 +108,9 @@ class TestEnrichCompanies:
             {"id": 1, "name": "Error Corp"}
         ]
 
-        with patch("src.enrichment.orchestrator.search_company", new_callable=AsyncMock) as mock_search:
+        with patch(
+            "src.enrichment.orchestrator.search_company", new_callable=AsyncMock
+        ) as mock_search:
             mock_search.side_effect = Exception("API timeout")
 
             result = await enrich_companies(
@@ -123,9 +134,18 @@ class TestEnrichCompanies:
         ]
         mock_db.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock()
 
-        with patch("src.enrichment.orchestrator.search_company", new_callable=AsyncMock) as mock_search, \
-             patch("src.enrichment.orchestrator.get_company_profile", new_callable=AsyncMock) as mock_profile, \
-             patch("src.enrichment.orchestrator.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with (
+            patch(
+                "src.enrichment.orchestrator.search_company", new_callable=AsyncMock
+            ) as mock_search,
+            patch(
+                "src.enrichment.orchestrator.get_company_profile",
+                new_callable=AsyncMock,
+            ) as mock_profile,
+            patch(
+                "src.enrichment.orchestrator.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+        ):
             mock_search.return_value = {"company_number": "00000001", "title": "TEST"}
             mock_profile.return_value = {
                 "company_number": "00000001",
@@ -166,9 +186,12 @@ class TestPredictMissingSalaries:
 
         mock_model = MagicMock()
 
-        with patch("src.enrichment.orchestrator.predict_salary") as mock_predict, \
-             patch("src.enrichment.orchestrator.build_features") as mock_features:
+        with (
+            patch("src.enrichment.orchestrator.predict_salary") as mock_predict,
+            patch("src.enrichment.orchestrator.build_features") as mock_features,
+        ):
             import numpy as np
+
             mock_features.return_value = (np.array([[1.0, 2.0]]), np.array([45000.0]))
             mock_predict.return_value = [
                 {

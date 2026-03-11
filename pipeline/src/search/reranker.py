@@ -4,16 +4,21 @@ Re-ranks search results using a cross-encoder model that scores
 query-document pairs for relevance. Lazy-loads the model on first use.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
+if TYPE_CHECKING:
+    from sentence_transformers import CrossEncoder
+
 logger = structlog.get_logger()
 
-_model: Any = None
+_model: CrossEncoder | None = None
 
 
-def get_reranker() -> Any:
+def get_reranker() -> CrossEncoder:
     """Lazy-load cross-encoder model (singleton).
 
     Returns:
@@ -23,9 +28,7 @@ def get_reranker() -> Any:
     if _model is None:
         from sentence_transformers import CrossEncoder
 
-        _model = CrossEncoder(
-            "cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512
-        )
+        _model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512)
         logger.info("reranker.model_loaded", model="ms-marco-MiniLM-L-6-v2")
     return _model
 
