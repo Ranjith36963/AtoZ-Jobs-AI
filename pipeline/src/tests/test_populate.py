@@ -1,10 +1,12 @@
 """Tests for job skills population (SPEC.md §3.3)."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.skills.populate import (
+    _call_with_retry,
+    get_jobs_without_skills,
     insert_job_skills,
     populate_job_skills,
     upsert_skill,
@@ -14,6 +16,7 @@ from src.skills.populate import (
 def _mock_db_client(
     jobs: list[dict[str, object]] | None = None,
     existing_skill_id: int | None = None,
+    existing_job_skill_ids: list[dict[str, object]] | None = None,
 ) -> MagicMock:
     """Build a mock Supabase client."""
     client = MagicMock()
@@ -25,6 +28,13 @@ def _mock_db_client(
     jobs_chain.not_.in_.return_value = jobs_chain
     jobs_chain.limit.return_value = jobs_chain
     jobs_chain.execute.return_value = MagicMock(data=jobs or [])
+
+    # job_skills select chain (for exclusion query)
+    js_select_chain = MagicMock()
+    js_select_chain.select.return_value = js_select_chain
+    js_select_chain.range.return_value = js_select_chain
+    js_select_data = existing_job_skill_ids or []
+    js_select_chain.execute.return_value = MagicMock(data=js_select_data)
 
     # skills query chain
     skills_select_chain = MagicMock()
@@ -44,9 +54,9 @@ def _mock_db_client(
     skills_insert_chain.execute.return_value = MagicMock(data=[{"id": 99}])
 
     # job_skills upsert chain
-    js_chain = MagicMock()
-    js_chain.upsert.return_value = js_chain
-    js_chain.execute.return_value = MagicMock(data=[])
+    js_upsert_chain = MagicMock()
+    js_upsert_chain.upsert.return_value = js_upsert_chain
+    js_upsert_chain.execute.return_value = MagicMock(data=[])
 
     def table_router(name: str) -> MagicMock:
         if name == "jobs":
@@ -54,7 +64,6 @@ def _mock_db_client(
         if name == "skills":
             if existing_skill_id:
                 return skills_select_chain
-            # First call returns no results (for select), second is insert
             mock = MagicMock()
             mock.select.return_value = mock
             mock.eq.return_value = mock
@@ -65,11 +74,48 @@ def _mock_db_client(
             )
             return mock
         if name == "job_skills":
-            return js_chain
+            # Return select chain for get_jobs_without_skills, upsert chain for insert
+            combined = MagicMock()
+            combined.select.return_value = js_select_chain
+            combined.upsert.return_value = js_upsert_chain
+            return combined
         return MagicMock()
 
     client.table = table_router
     return client
+
+
+class TestCallWithRetry:
+    """Retry wrapper tests."""
+
+    def test_succeeds_first_try(self) -> None:
+        result = _call_with_retry("test_op", lambda: 42)
+        assert result == 42
+
+    @patch("src.skills.populate.time.sleep")
+    def test_retries_on_failure(self, mock_sleep: MagicMock) -> None:
+        call_count = 0
+
+        def flaky() -> int:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ConnectionError("dropped")
+            return 42
+
+        result = _call_with_retry("test_op", flaky)
+        assert result == 42
+        assert call_count == 3
+        assert mock_sleep.call_count == 2
+
+    @patch("src.skills.populate.time.sleep")
+    def test_raises_after_max_retries(self, mock_sleep: MagicMock) -> None:
+        def always_fails() -> None:
+            raise ConnectionError("dropped")
+
+        with pytest.raises(ConnectionError):
+            _call_with_retry("test_op", always_fails)
+        assert mock_sleep.call_count == 3  # 3 retries before final raise
 
 
 class TestUpsertSkill:
@@ -94,14 +140,28 @@ class TestInsertJobSkills:
     @pytest.mark.asyncio
     async def test_insert_multiple_skills(self) -> None:
         db = _mock_db_client()
-        # Should not raise
         await insert_job_skills(db, job_id=1, skill_ids=[1, 2, 3])
 
     @pytest.mark.asyncio
     async def test_insert_empty_skills(self) -> None:
         db = _mock_db_client()
-        # Should not raise with empty list
         await insert_job_skills(db, job_id=1, skill_ids=[])
+
+
+class TestGetJobsWithoutSkills:
+    """Tests for exclusion query pagination."""
+
+    @pytest.mark.asyncio
+    async def test_excludes_processed_ids(self) -> None:
+        db = _mock_db_client(jobs=[{"id": 3, "title": "Dev", "description_plain": ""}])
+        result = await get_jobs_without_skills(db, batch_size=10, processed_ids={1, 2})
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_jobs_returns_empty(self) -> None:
+        db = _mock_db_client(jobs=[])
+        result = await get_jobs_without_skills(db, batch_size=10)
+        assert result == []
 
 
 class TestPopulateJobSkills:
@@ -115,7 +175,6 @@ class TestPopulateJobSkills:
         jobs = [{"id": 1, "title": "Python Dev", "description_plain": "AWS experience"}]
         db = _mock_db_client(jobs=jobs)
 
-        # After first batch returns jobs, second batch returns empty to stop loop
         call_count = 0
         original_table = db.table
 
@@ -145,4 +204,35 @@ class TestPopulateJobSkills:
         mock_matcher = MagicMock()
         db = _mock_db_client(jobs=[])
         stats = await populate_job_skills(db, mock_matcher)
+        assert stats["jobs_processed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_error_in_job_increments_error_count(self) -> None:
+        mock_matcher = MagicMock()
+        mock_matcher.extract.side_effect = RuntimeError("extraction failed")
+
+        jobs = [{"id": 1, "title": "Test", "description_plain": "desc"}]
+        db = _mock_db_client(jobs=jobs)
+
+        call_count = 0
+        original_table = db.table
+
+        def table_with_empty_second_call(name: str) -> MagicMock:
+            nonlocal call_count
+            if name == "jobs":
+                call_count += 1
+                if call_count > 1:
+                    mock = MagicMock()
+                    mock.select.return_value = mock
+                    mock.eq.return_value = mock
+                    mock.not_.in_.return_value = mock
+                    mock.limit.return_value = mock
+                    mock.execute.return_value = MagicMock(data=[])
+                    return mock
+            return original_table(name)  # type: ignore[no-any-return]
+
+        db.table = table_with_empty_second_call
+
+        stats = await populate_job_skills(db, mock_matcher, batch_size=10)
+        assert stats["errors"] == 1
         assert stats["jobs_processed"] == 0
