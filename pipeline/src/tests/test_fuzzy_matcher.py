@@ -1,11 +1,18 @@
 """Tests for fuzzy duplicate matching (SPEC.md §4.2-4.3, Gates D3-D10)."""
 
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from src.dedup.fuzzy_matcher import (
     DUPLICATE_THRESHOLD,
     compute_local_duplicate_score,
+    find_fuzzy_candidates,
+    mark_duplicate,
     pick_canonical,
 )
 
@@ -228,4 +235,135 @@ class TestPropertyBased:
             50.0,
             salary_overlap,
             date_diff_days,
+        )
+
+
+# ===========================================================================
+# find_fuzzy_candidates — DB RPC call (mocked)
+# ===========================================================================
+
+
+class TestFindFuzzyCandidates:
+    """Tests for find_fuzzy_candidates with mocked Supabase client."""
+
+    @pytest.mark.asyncio
+    async def test_returns_candidates_above_threshold(self) -> None:
+        """Only rows with dup_score >= DUPLICATE_THRESHOLD are returned."""
+        db = MagicMock()
+        rpc_chain = MagicMock()
+        db.rpc.return_value = rpc_chain
+        rpc_chain.execute.return_value = MagicMock(
+            data=[
+                {"id": 10, "dup_score": 0.80, "title_sim": 0.7},
+                {"id": 20, "dup_score": 0.50, "title_sim": 0.4},
+                {"id": 30, "dup_score": 0.70, "title_sim": 0.6},
+            ]
+        )
+
+        result = await find_fuzzy_candidates(1, db)
+
+        db.rpc.assert_called_once_with("find_fuzzy_duplicates", {"target_job_id": 1})
+        assert len(result) == 2
+        assert result[0]["id"] == 10
+        assert result[1]["id"] == 30
+
+    @pytest.mark.asyncio
+    async def test_no_candidates_returns_empty(self) -> None:
+        """Empty RPC result returns empty list."""
+        db = MagicMock()
+        rpc_chain = MagicMock()
+        db.rpc.return_value = rpc_chain
+        rpc_chain.execute.return_value = MagicMock(data=[])
+
+        result = await find_fuzzy_candidates(1, db)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_null_data_returns_empty(self) -> None:
+        """None data from RPC returns empty list."""
+        db = MagicMock()
+        rpc_chain = MagicMock()
+        db.rpc.return_value = rpc_chain
+        rpc_chain.execute.return_value = MagicMock(data=None)
+
+        result = await find_fuzzy_candidates(1, db)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_all_below_threshold_returns_empty(self) -> None:
+        """All candidates below threshold → empty result."""
+        db = MagicMock()
+        rpc_chain = MagicMock()
+        db.rpc.return_value = rpc_chain
+        rpc_chain.execute.return_value = MagicMock(
+            data=[
+                {"id": 10, "dup_score": 0.30},
+                {"id": 20, "dup_score": 0.50},
+            ]
+        )
+
+        result = await find_fuzzy_candidates(1, db)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_missing_dup_score_defaults_to_zero(self) -> None:
+        """Row without dup_score defaults to 0 → filtered out."""
+        db = MagicMock()
+        rpc_chain = MagicMock()
+        db.rpc.return_value = rpc_chain
+        rpc_chain.execute.return_value = MagicMock(
+            data=[{"id": 10, "title_sim": 0.9}]  # no dup_score key
+        )
+
+        result = await find_fuzzy_candidates(1, db)
+        assert result == []
+
+
+# ===========================================================================
+# mark_duplicate — DB update call (mocked)
+# ===========================================================================
+
+
+class TestMarkDuplicate:
+    """Tests for mark_duplicate with mocked Supabase client."""
+
+    @pytest.mark.asyncio
+    async def test_updates_correct_fields(self) -> None:
+        """Calls update with is_duplicate, canonical_id, duplicate_score."""
+        db = MagicMock()
+        chain = MagicMock()
+        db.table.return_value = chain
+        chain.update.return_value = chain
+        chain.eq.return_value = chain
+
+        await mark_duplicate(42, 10, 0.85, db)
+
+        db.table.assert_called_once_with("jobs")
+        chain.update.assert_called_once_with(
+            {
+                "is_duplicate": True,
+                "canonical_id": 10,
+                "duplicate_score": 0.85,
+            }
+        )
+        chain.eq.assert_called_once_with("id", 42)
+        chain.execute.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_mark_duplicate_with_zero_score(self) -> None:
+        """Edge case: score of 0 is valid."""
+        db = MagicMock()
+        chain = MagicMock()
+        db.table.return_value = chain
+        chain.update.return_value = chain
+        chain.eq.return_value = chain
+
+        await mark_duplicate(1, 2, 0.0, db)
+
+        chain.update.assert_called_once_with(
+            {
+                "is_duplicate": True,
+                "canonical_id": 2,
+                "duplicate_score": 0.0,
+            }
         )
