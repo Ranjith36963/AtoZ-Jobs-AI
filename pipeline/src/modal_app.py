@@ -330,21 +330,25 @@ async def daily_maintenance() -> None:
 async def seed_esco(csv_path: str = "data/esco_skills.csv") -> dict[str, Any]:
     """One-time ESCO taxonomy load into skills tables.
 
-    If the ESCO CSV is not found, seeds from the built-in dictionary only
-    (~450+ UK patterns). The ESCO CSV adds ~13K additional skills.
+    Priority: CSV file > ESCO REST API > dictionary-only fallback.
+    The ESCO API downloads ~14,500 skills when the CSV is not available.
     """
     import os
 
     import structlog
 
-    from src.skills.seed_esco import seed_esco_skills, seed_skills_table
+    from src.skills.seed_esco import (
+        seed_esco_from_api,
+        seed_esco_skills,
+        seed_skills_table,
+    )
 
     logger = structlog.get_logger()
     logger.info("seed_esco.start", csv_path=csv_path)
 
     db_client = _get_db()
 
-    # Seed esco_skills table only if CSV exists
+    # Seed esco_skills table: CSV > API > skip
     esco_count = 0
     effective_csv: str | None = csv_path
     if os.path.exists(csv_path):
@@ -352,6 +356,11 @@ async def seed_esco(csv_path: str = "data/esco_skills.csv") -> dict[str, Any]:
     else:
         logger.warning("seed_esco.csv_not_found", path=csv_path)
         effective_csv = None
+        # Fallback: download from ESCO REST API
+        try:
+            esco_count = await seed_esco_from_api(db_client)
+        except Exception as e:
+            logger.error("seed_esco.api_fallback_failed", error=str(e))
 
     # Seed skills table from dictionary (works with or without CSV)
     skills_count = await seed_skills_table(db_client, effective_csv)

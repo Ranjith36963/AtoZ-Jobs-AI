@@ -1,6 +1,6 @@
 # AtoZ Jobs AI — Project Status
 
-**Last updated:** 2026-03-11
+**Last updated:** 2026-03-12
 
 ## Current Stage: Phase 2 — Code Complete, CI Green, Dedup Coverage Fixed
 
@@ -228,8 +228,9 @@
 | test_profile_handler.py | ~8 | PASS |
 | test_search_orchestrator.py | ~7 | PASS |
 | test_search_quality.py | 52 | PASS |
+| test_esco_api.py | 21 | PASS |
 
-| **Grand Total** | **667** | **ALL PASS** |
+| **Grand Total** | **688** | **ALL PASS** |
 
 ## Coverage Summary
 
@@ -282,6 +283,7 @@ All remaining unverified items require live infrastructure:
 | fix: extract scalar job_ids before passing to .not_.in_() | Backfill job skills bigint input fix |
 | fix: add retry with backoff and paginated exclusion query | Robust skill backfill with pagination |
 | test: dedup coverage to 100% | D16 gate now PASS (was FAIL at 64%) |
+| feat: ESCO REST API client | Downloads ~14,500 skills when CSV not available (S3 gate) |
 
 ---
 
@@ -293,6 +295,7 @@ All remaining unverified items require live infrastructure:
 - [x] Migration 010: ESCO taxonomy (esco_skills, mv_skill_demand, mv_skill_cooccurrence, pg_cron)
 - [x] Migration 014: RLS for esco_skills (public read + service role write)
 - [x] ESCO CSV loader (concept_uri, preferred_label, alt_labels, skill_type)
+- [x] ESCO REST API client (paginated download of ~14,500 skills from ec.europa.eu)
 - [x] Dictionary builder (~405 patterns, ~317 canonical names: Phase 1 + UK-specific + ESCO)
 - [x] UK-specific entries expanded to ~291 entries across 12 categories per SPEC §3.2
 - [x] SpaCy PhraseMatcher (two-layer: LOWER + ORTH for acronyms ≤6 chars)
