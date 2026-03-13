@@ -36,6 +36,7 @@ image = (
         "structlog",
         "numpy",
         "supabase",
+        "postgrest",
         "beautifulsoup4",
         # Phase 2 dependencies
         "spacy>=3.7",
@@ -63,6 +64,35 @@ def _get_db() -> Any:
     )
 
 
+def _resolve_source_ids(db_client: Any, source_names: set[str]) -> dict[str, int]:
+    """Look up or create source records, returning {name: id} mapping."""
+    mapping: dict[str, int] = {}
+    for name in source_names:
+        result = (
+            db_client.table("sources")
+            .select("id")
+            .eq("name", name)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            mapping[name] = int(result.data[0]["id"])
+        else:
+            insert_result = (
+                db_client.table("sources")
+                .insert({"name": name, "is_active": True})
+                .execute()
+            )
+            mapping[name] = int(insert_result.data[0]["id"])
+    return mapping
+
+
+# Fields in JobBase that do not map directly to jobs table columns.
+# latitude/longitude are handled later by the geocode pipeline stage
+# (stored as a PostGIS GEOGRAPHY point, not separate columns).
+_EXCLUDE_FROM_UPSERT = {"source_name", "latitude", "longitude"}
+
+
 def _upsert_jobs(db_client: Any, jobs: list[Any]) -> int:
     """UPSERT collected jobs into the jobs table.
 
@@ -76,16 +106,27 @@ def _upsert_jobs(db_client: Any, jobs: list[Any]) -> int:
     import structlog
 
     logger = structlog.get_logger()
-    rows = [j.model_dump(mode="json") for j in jobs]
-    if not rows:
+    if not jobs:
         return 0
+
+    # Resolve source_name → source_id
+    source_names = {j.source_name for j in jobs}
+    source_map = _resolve_source_ids(db_client, source_names)
+
+    rows: list[dict[str, object]] = []
+    for j in jobs:
+        row = j.model_dump(mode="json")
+        row["source_id"] = source_map[j.source_name]
+        for key in _EXCLUDE_FROM_UPSERT:
+            row.pop(key, None)
+        rows.append(row)
 
     batch_size = 500
     total = 0
     for i in range(0, len(rows), batch_size):
         batch = rows[i : i + batch_size]
         db_client.table("jobs").upsert(
-            batch, on_conflict="source_id,source_name"
+            batch, on_conflict="source_id,external_id"
         ).execute()
         total += len(batch)
 
