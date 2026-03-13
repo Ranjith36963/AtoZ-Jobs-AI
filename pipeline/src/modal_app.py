@@ -76,7 +76,7 @@ def _upsert_jobs(db_client: Any, jobs: list[Any]) -> int:
     import structlog
 
     logger = structlog.get_logger()
-    rows = [j.model_dump() for j in jobs]
+    rows = [j.model_dump(mode="json") for j in jobs]
     if not rows:
         return 0
 
