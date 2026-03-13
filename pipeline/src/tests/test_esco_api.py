@@ -1,4 +1,4 @@
-"""Tests for ESCO REST API client (skills/esco_api.py)."""
+"""Tests for ESCO skills taxonomy downloader (skills/esco_api.py)."""
 
 from __future__ import annotations
 
@@ -8,15 +8,17 @@ import httpx
 import pytest
 
 from src.skills.esco_api import (
+    _download_csv,
     _extract_alt_labels,
     _extract_description,
     _extract_label,
+    _fetch_from_api,
     fetch_all_esco_skills,
 )
 
 
 # ===========================================================================
-# Helper extraction functions
+# Helper extraction functions (used by API fallback)
 # ===========================================================================
 
 
@@ -93,16 +95,146 @@ class TestExtractDescription:
 
 
 # ===========================================================================
-# fetch_all_esco_skills — paginated API
+# _download_csv — CSV download from GitHub
 # ===========================================================================
 
 
-class TestFetchAllEscoSkills:
-    """Tests for fetch_all_esco_skills with mocked HTTP."""
+SAMPLE_CSV = (
+    "conceptType,conceptUri,skillType,reuseLevel,preferredLabel,"
+    "altLabels,hiddenLabels,status,modifiedDate,scopeNote,definition,"
+    "inScheme,description\n"
+    "KnowledgeSkillCompetence,http://data.europa.eu/esco/skill/001,"
+    "skill/competence,sector-specific,Python programming,"
+    '"Python 3\nPython dev",,released,2024-01-01,,,,'
+    "Use Python for software development\n"
+    "KnowledgeSkillCompetence,http://data.europa.eu/esco/skill/002,"
+    "knowledge,cross-sector,Django framework,"
+    '"Django web\nDj",,released,2024-01-01,,,,'
+    "Django web framework for Python\n"
+    "KnowledgeSkillCompetence,http://data.europa.eu/esco/skill/003,"
+    "skill/competence,sector-specific,,,,,2024-01-01,,,,"
+    "No preferred label skill\n"
+)
+
+
+class TestDownloadCsv:
+    """Tests for _download_csv."""
 
     @pytest.mark.asyncio
-    async def test_fetches_single_page(self) -> None:
-        """Single page with 2 skills returns both."""
+    async def test_parses_csv_correctly(self) -> None:
+        """CSV is downloaded and parsed into expected format."""
+        mock_response = MagicMock()
+        mock_response.text = SAMPLE_CSV
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("src.skills.esco_api.httpx.AsyncClient") as MockClient:
+            mock_client = AsyncMock()
+            mock_client.get.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = mock_client
+
+            result = await _download_csv()
+
+        # Should have 2 skills (3rd has empty preferredLabel → skipped)
+        assert len(result) == 2
+        assert (
+            result["http://data.europa.eu/esco/skill/001"]["preferred_label"]
+            == "Python programming"
+        )
+        assert (
+            result["http://data.europa.eu/esco/skill/001"]["skill_type"]
+            == "skill/competence"
+        )
+        assert (
+            "Python 3" in result["http://data.europa.eu/esco/skill/001"]["alt_labels"]
+        )
+        # "Dj" is only 2 chars → filtered out
+        assert "Dj" not in result["http://data.europa.eu/esco/skill/002"]["alt_labels"]
+        assert (
+            "Django web" in result["http://data.europa.eu/esco/skill/002"]["alt_labels"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_handles_empty_csv(self) -> None:
+        """Empty CSV (header only) returns empty dict."""
+        csv_text = (
+            "conceptType,conceptUri,skillType,reuseLevel,preferredLabel,"
+            "altLabels,hiddenLabels,status,modifiedDate,scopeNote,definition,"
+            "inScheme,description\n"
+        )
+        mock_response = MagicMock()
+        mock_response.text = csv_text
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("src.skills.esco_api.httpx.AsyncClient") as MockClient:
+            mock_client = AsyncMock()
+            mock_client.get.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = mock_client
+
+            result = await _download_csv()
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_http_error_raises(self) -> None:
+        """HTTP error during download is raised."""
+        with patch("src.skills.esco_api.httpx.AsyncClient") as MockClient:
+            mock_client = AsyncMock()
+            mock_response = MagicMock()
+            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "Not Found",
+                request=MagicMock(),
+                response=MagicMock(status_code=404),
+            )
+            mock_client.get.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = mock_client
+
+            with pytest.raises(httpx.HTTPStatusError):
+                await _download_csv()
+
+    @pytest.mark.asyncio
+    async def test_null_description_handled(self) -> None:
+        """Null/missing description doesn't crash."""
+        csv_text = (
+            "conceptType,conceptUri,skillType,reuseLevel,preferredLabel,"
+            "altLabels,hiddenLabels,status,modifiedDate,scopeNote,definition,"
+            "inScheme,description\n"
+            "KnowledgeSkillCompetence,http://data.europa.eu/esco/skill/001,"
+            "skill/competence,sector-specific,Python,,,released,2024-01-01,,,,\n"
+        )
+        mock_response = MagicMock()
+        mock_response.text = csv_text
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("src.skills.esco_api.httpx.AsyncClient") as MockClient:
+            mock_client = AsyncMock()
+            mock_client.get.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = mock_client
+
+            result = await _download_csv()
+
+        assert len(result) == 1
+        assert result["http://data.europa.eu/esco/skill/001"]["description"] == ""
+
+
+# ===========================================================================
+# _fetch_from_api — REST API fallback
+# ===========================================================================
+
+
+class TestFetchFromApi:
+    """Tests for _fetch_from_api (REST API fallback)."""
+
+    @pytest.mark.asyncio
+    async def test_fetches_skills_from_api(self) -> None:
+        """API response is parsed correctly."""
         api_response = {
             "total": 2,
             "count": 2,
@@ -135,79 +267,16 @@ class TestFetchAllEscoSkills:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             MockClient.return_value = mock_client
 
-            result = await fetch_all_esco_skills(page_size=100)
+            result = await _fetch_from_api()
 
         assert len(result) == 2
         assert (
             result["http://data.europa.eu/esco/skill/001"]["preferred_label"]
             == "Python"
         )
-        assert (
-            result["http://data.europa.eu/esco/skill/002"]["preferred_label"]
-            == "Django"
-        )
-        assert (
-            "Python 3" in result["http://data.europa.eu/esco/skill/001"]["alt_labels"]
-        )
 
     @pytest.mark.asyncio
-    async def test_paginates_correctly(self) -> None:
-        """Two pages of results are combined."""
-        page1 = {
-            "total": 3,
-            "count": 2,
-            "offset": 0,
-            "_embedded": {
-                "http://data.europa.eu/esco/skill/001": {
-                    "preferredLabel": {"en": "Python"},
-                    "alternativeLabel": {"en": []},
-                    "skillType": "",
-                    "description": {},
-                },
-                "http://data.europa.eu/esco/skill/002": {
-                    "preferredLabel": {"en": "Java"},
-                    "alternativeLabel": {"en": []},
-                    "skillType": "",
-                    "description": {},
-                },
-            },
-            "_links": {},
-        }
-        page2 = {
-            "total": 3,
-            "count": 1,
-            "offset": 2,
-            "_embedded": {
-                "http://data.europa.eu/esco/skill/003": {
-                    "preferredLabel": {"en": "SQL"},
-                    "alternativeLabel": {"en": []},
-                    "skillType": "",
-                    "description": {},
-                },
-            },
-            "_links": {},
-        }
-
-        responses = [MagicMock(), MagicMock()]
-        responses[0].json.return_value = page1
-        responses[0].raise_for_status = MagicMock()
-        responses[1].json.return_value = page2
-        responses[1].raise_for_status = MagicMock()
-
-        with patch("src.skills.esco_api.httpx.AsyncClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_client.get.side_effect = responses
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client
-
-            result = await fetch_all_esco_skills(page_size=2)
-
-        assert len(result) == 3
-        assert "http://data.europa.eu/esco/skill/003" in result
-
-    @pytest.mark.asyncio
-    async def test_empty_response(self) -> None:
+    async def test_empty_api_response(self) -> None:
         """Empty API response returns empty dict."""
         api_response = {
             "total": 0,
@@ -228,68 +297,93 @@ class TestFetchAllEscoSkills:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             MockClient.return_value = mock_client
 
-            result = await fetch_all_esco_skills()
+            result = await _fetch_from_api()
 
         assert result == {}
 
+
+# ===========================================================================
+# fetch_all_esco_skills — top-level orchestrator
+# ===========================================================================
+
+
+class TestFetchAllEscoSkills:
+    """Tests for fetch_all_esco_skills (CSV > API fallback)."""
+
     @pytest.mark.asyncio
-    async def test_skips_skills_without_label(self) -> None:
-        """Skills with empty preferred label are skipped."""
-        api_response = {
-            "total": 2,
-            "count": 2,
-            "offset": 0,
-            "_embedded": {
-                "http://data.europa.eu/esco/skill/001": {
-                    "preferredLabel": {"en": "Python"},
-                    "alternativeLabel": {"en": []},
-                    "skillType": "",
-                    "description": {},
-                },
-                "http://data.europa.eu/esco/skill/002": {
-                    "preferredLabel": {"de": "Nur Deutsch"},  # no English label
-                    "alternativeLabel": {"en": []},
-                    "skillType": "",
-                    "description": {},
-                },
+    async def test_uses_csv_when_available(self) -> None:
+        """CSV download is used as primary source."""
+        mock_skills = {
+            "http://data.europa.eu/esco/skill/001": {
+                "preferred_label": "Python",
+                "alt_labels": [],
+                "skill_type": "",
+                "description": "",
             },
-            "_links": {},
         }
 
-        mock_response = MagicMock()
-        mock_response.json.return_value = api_response
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("src.skills.esco_api.httpx.AsyncClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_client.get.return_value = mock_response
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client
-
+        with patch(
+            "src.skills.esco_api._download_csv",
+            new_callable=AsyncMock,
+            return_value=mock_skills,
+        ) as mock_csv:
             result = await fetch_all_esco_skills()
 
         assert len(result) == 1
-        assert "http://data.europa.eu/esco/skill/001" in result
+        mock_csv.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_http_error_propagates(self) -> None:
-        """HTTP errors are raised (caller handles retry)."""
-        with patch("src.skills.esco_api.httpx.AsyncClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_response = MagicMock()
-            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-                "Server Error",
-                request=MagicMock(),
-                response=MagicMock(status_code=500),
-            )
-            mock_client.get.return_value = mock_response
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = mock_client
+    async def test_falls_back_to_api_when_csv_fails(self) -> None:
+        """API fallback is used when CSV download fails."""
+        api_skills = {
+            "http://data.europa.eu/esco/skill/001": {
+                "preferred_label": "Python",
+                "alt_labels": [],
+                "skill_type": "",
+                "description": "",
+            },
+        }
 
-            with pytest.raises(httpx.HTTPStatusError):
-                await fetch_all_esco_skills()
+        with (
+            patch(
+                "src.skills.esco_api._download_csv",
+                new_callable=AsyncMock,
+                side_effect=httpx.HTTPStatusError(
+                    "Not Found",
+                    request=MagicMock(),
+                    response=MagicMock(status_code=404),
+                ),
+            ),
+            patch(
+                "src.skills.esco_api._fetch_from_api",
+                new_callable=AsyncMock,
+                return_value=api_skills,
+            ) as mock_api,
+        ):
+            result = await fetch_all_esco_skills()
+
+        assert len(result) == 1
+        mock_api.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_csv_network_error_triggers_fallback(self) -> None:
+        """Network error on CSV triggers API fallback."""
+        with (
+            patch(
+                "src.skills.esco_api._download_csv",
+                new_callable=AsyncMock,
+                side_effect=httpx.ConnectError("Connection refused"),
+            ),
+            patch(
+                "src.skills.esco_api._fetch_from_api",
+                new_callable=AsyncMock,
+                return_value={},
+            ) as mock_api,
+        ):
+            result = await fetch_all_esco_skills()
+
+        assert result == {}
+        mock_api.assert_awaited_once()
 
 
 # ===========================================================================
@@ -302,7 +396,7 @@ class TestSeedEscoFromApi:
 
     @pytest.mark.asyncio
     async def test_downloads_and_seeds(self) -> None:
-        """API data is fetched and upserted into esco_skills."""
+        """Fetched data is upserted into esco_skills table."""
         from src.skills.seed_esco import seed_esco_from_api
 
         mock_esco_data = {

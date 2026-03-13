@@ -1,38 +1,103 @@
-"""ESCO REST API client for downloading the full skills taxonomy.
+"""ESCO skills taxonomy downloader.
 
-Downloads ~14,500 skills from the official EU ESCO API when the CSV
-file is not available locally. Used as a fallback in seed_esco.
+Downloads the ESCO skills_en.csv from a public GitHub mirror when the
+CSV file is not available locally. Falls back to the ESCO REST API
+(capped at ~200 results) as a last resort.
+
+The CSV source is the official ESCO v1.1.1 dataset hosted at:
+https://github.com/tabiya-tech/tabiya-esco-datasets-and-tools
 """
 
 from __future__ import annotations
+
+import csv
+import io
 
 import httpx
 import structlog
 
 logger = structlog.get_logger()
 
+ESCO_CSV_URL = (
+    "https://raw.githubusercontent.com/tabiya-tech/tabiya-esco-datasets-and-tools"
+    "/main/datasets/esco/v1.1.1/classification/en/csv/skills_en.csv"
+)
+
 ESCO_API_BASE = "https://ec.europa.eu/esco/api"
 SKILLS_SCHEME_URI = "http://data.europa.eu/esco/concept-scheme/skills"
-ESCO_VERSION = "v1.2.0"
-PAGE_SIZE = 100
 
 
-async def fetch_all_esco_skills(
-    version: str = ESCO_VERSION,
-    page_size: int = PAGE_SIZE,
-) -> dict[str, dict[str, str | list[str]]]:
-    """Fetch all ESCO skills via the REST API with pagination.
+async def fetch_all_esco_skills() -> dict[str, dict[str, str | list[str]]]:
+    """Download full ESCO skills taxonomy (~13,900 skills).
 
-    Args:
-        version: ESCO dataset version (e.g. "v1.2.0").
-        page_size: Number of skills per API page (max varies by API).
+    Strategy:
+    1. Download skills_en.csv from GitHub mirror (fast, complete)
+    2. Fall back to ESCO REST API if GitHub is unreachable (may be partial)
 
     Returns:
         Dict keyed by concept_uri, matching load_esco_csv() output format:
         {uri: {preferred_label, alt_labels, skill_type, description}}.
     """
+    # Try CSV download first (reliable, complete)
+    try:
+        return await _download_csv()
+    except Exception as e:
+        logger.warning("esco_download.csv_failed", error=str(e))
+
+    # Fallback: REST API (capped at ~200 by server)
+    logger.info("esco_download.trying_api_fallback")
+    return await _fetch_from_api()
+
+
+async def _download_csv(
+    url: str = ESCO_CSV_URL,
+) -> dict[str, dict[str, str | list[str]]]:
+    """Download and parse ESCO skills_en.csv from GitHub.
+
+    Args:
+        url: URL to the raw CSV file.
+
+    Returns:
+        Parsed skills dict.
+    """
+    async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+
+    skills: dict[str, dict[str, str | list[str]]] = {}
+    reader = csv.DictReader(io.StringIO(response.text))
+
+    for row in reader:
+        uri = row.get("conceptUri", "").strip()
+        preferred = row.get("preferredLabel", "").strip()
+        if not uri or not preferred:
+            continue
+
+        alt_raw = row.get("altLabels", "") or ""
+        alt_labels = [
+            a.strip() for a in alt_raw.split("\n") if a.strip() and len(a.strip()) > 2
+        ]
+
+        skills[uri] = {
+            "preferred_label": preferred,
+            "alt_labels": alt_labels,
+            "skill_type": row.get("skillType", "").strip(),
+            "description": (row.get("description", "") or "").strip(),
+        }
+
+    logger.info("esco_download.csv_complete", total_skills=len(skills), url=url)
+    return skills
+
+
+async def _fetch_from_api() -> dict[str, dict[str, str | list[str]]]:
+    """Fetch ESCO skills via REST API (limited to ~200 by server pagination cap).
+
+    Returns:
+        Partial skills dict (may not contain full taxonomy).
+    """
     skills: dict[str, dict[str, str | list[str]]] = {}
     offset = 0
+    page_size = 100
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         while True:
@@ -40,7 +105,7 @@ async def fetch_all_esco_skills(
                 f"{ESCO_API_BASE}/resource/concept"
                 f"?isInScheme={SKILLS_SCHEME_URI}"
                 f"&language=en"
-                f"&selectedVersion={version}"
+                f"&selectedVersion=v1.2.0"
                 f"&limit={page_size}"
                 f"&offset={offset}"
             )
@@ -60,15 +125,11 @@ async def fetch_all_esco_skills(
                 if not preferred:
                     continue
 
-                alt_labels = _extract_alt_labels(skill_data)
-                skill_type = skill_data.get("skillType", "")
-                description = _extract_description(skill_data)
-
                 skills[uri] = {
                     "preferred_label": preferred,
-                    "alt_labels": alt_labels,
-                    "skill_type": skill_type,
-                    "description": description,
+                    "alt_labels": _extract_alt_labels(skill_data),
+                    "skill_type": str(skill_data.get("skillType", "")),
+                    "description": _extract_description(skill_data),
                 }
 
             offset += page_size
