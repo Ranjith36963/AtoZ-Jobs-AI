@@ -112,7 +112,10 @@ async def fetch_reed() -> None:
     from src.collectors.reed import ReedCollector
 
     logger = structlog.get_logger()
-    api_key = os.environ["REED_API_KEY"]
+    api_key = os.environ.get("REED_API_KEY", "")
+    if not api_key:
+        logger.warning("fetch_reed.skipped", reason="REED_API_KEY not set")
+        return
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         collector = ReedCollector(client=client, api_key=api_key)
@@ -138,8 +141,11 @@ async def fetch_adzuna() -> None:
     from src.collectors.adzuna import AdzunaCollector
 
     logger = structlog.get_logger()
-    app_id = os.environ["ADZUNA_APP_ID"]
-    app_key = os.environ["ADZUNA_APP_KEY"]
+    app_id = os.environ.get("ADZUNA_APP_ID", "")
+    app_key = os.environ.get("ADZUNA_APP_KEY", "")
+    if not app_id or not app_key:
+        logger.warning("fetch_adzuna.skipped", reason="ADZUNA credentials not set")
+        return
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         collector = AdzunaCollector(client=client, app_id=app_id, app_key=app_key)
@@ -169,25 +175,31 @@ async def fetch_aggregators() -> None:
     all_jobs: list[object] = []
 
     # Jooble
-    jooble_key = os.environ["JOOBLE_API_KEY"]
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        jooble = JoobleCollector(client=client, api_key=jooble_key)
-        jooble_jobs = await jooble.sweep_all()
-        all_jobs.extend(jooble_jobs)
-        logger.info("fetch_jooble.complete", jobs_collected=len(jooble_jobs))
+    jooble_key = os.environ.get("JOOBLE_API_KEY", "")
+    if not jooble_key:
+        logger.warning("fetch_jooble.skipped", reason="JOOBLE_API_KEY not set")
+    else:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            jooble = JoobleCollector(client=client, api_key=jooble_key)
+            jooble_jobs = await jooble.sweep_all()
+            all_jobs.extend(jooble_jobs)
+            logger.info("fetch_jooble.complete", jobs_collected=len(jooble_jobs))
 
     # Careerjet
-    careerjet_affid = os.environ["CAREERJET_AFFID"]
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        careerjet = CareerjetCollector(
-            client=client,
-            affid=careerjet_affid,
-            user_ip=os.environ.get("MODAL_WORKER_IP", "0.0.0.0"),
-            user_agent="AtoZ-Jobs-Pipeline/0.1",
-        )
-        careerjet_jobs = await careerjet.sweep_all()
-        all_jobs.extend(careerjet_jobs)
-        logger.info("fetch_careerjet.complete", jobs_collected=len(careerjet_jobs))
+    careerjet_affid = os.environ.get("CAREERJET_AFFID", "")
+    if not careerjet_affid:
+        logger.warning("fetch_careerjet.skipped", reason="CAREERJET_AFFID not set")
+    else:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            careerjet = CareerjetCollector(
+                client=client,
+                affid=careerjet_affid,
+                user_ip=os.environ.get("MODAL_WORKER_IP", "0.0.0.0"),
+                user_agent="AtoZ-Jobs-Pipeline/0.1",
+            )
+            careerjet_jobs = await careerjet.sweep_all()
+            all_jobs.extend(careerjet_jobs)
+            logger.info("fetch_careerjet.complete", jobs_collected=len(careerjet_jobs))
 
     db_client = _get_db()
     upserted = _upsert_jobs(db_client, all_jobs)

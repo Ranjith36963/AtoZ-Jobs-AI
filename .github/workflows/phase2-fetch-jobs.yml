@@ -13,15 +13,7 @@ jobs:
           python-version: '3.12'
       - run: pip install modal uv
       - run: cd pipeline && uv sync
-      - run: cd pipeline && modal run src/modal_app.py::fetch_reed
-        env:
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-      - run: cd pipeline && modal run src/modal_app.py::fetch_adzuna
-        env:
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-      - run: cd pipeline && modal run src/modal_app.py::fetch_aggregators
+      - run: cd pipeline && modal run src/modal_app.py::fetch_free_apis
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
