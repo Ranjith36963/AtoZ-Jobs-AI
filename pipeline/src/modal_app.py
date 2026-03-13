@@ -1,9 +1,10 @@
 """Modal serverless app with scheduled cron functions (PLAYBOOK §2.6, Phase 2).
 
-Modal Starter allows 5 deployed crons, so we consolidate:
+Cron functions:
 - fetch_reed: Every 30 min
 - fetch_adzuna: Every 60 min
 - fetch_aggregators: Every 2 hours (Jooble + Careerjet combined)
+- fetch_free_apis: Every 3 hours (7 free sources, no API keys)
 - process_queues: Every 15 min
 - daily_maintenance: Daily at 3 AM (includes monthly_reindex on day 1)
 
@@ -191,6 +192,38 @@ async def fetch_aggregators() -> None:
     db_client = _get_db()
     upserted = _upsert_jobs(db_client, all_jobs)
     logger.info("fetch_aggregators.complete", jobs_upserted=upserted)
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("atoz-env")],
+    schedule=modal.Cron("30 */3 * * *"),
+    timeout=900,
+)
+async def fetch_free_apis() -> None:
+    """Fetch jobs from 7 free API sources every 3 hours (no API keys needed).
+
+    Sources: Arbeitnow, RemoteOK, Jobicy, Himalayas, Remotive, DevITjobs, Landing.jobs.
+    Filters for UK/Remote jobs.
+    """
+    import httpx
+    import structlog
+
+    from src.collectors.free_apis import fetch_all_free_sources
+
+    logger = structlog.get_logger()
+    logger.info("fetch_free_apis.start")
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        jobs = await fetch_all_free_sources(client)
+        logger.info("fetch_free_apis.collected", jobs_collected=len(jobs))
+
+    if jobs:
+        db_client = _get_db()
+        upserted = _upsert_jobs(db_client, jobs)
+        logger.info("fetch_free_apis.complete", jobs_upserted=upserted)
+    else:
+        logger.warning("fetch_free_apis.no_jobs")
 
 
 @app.function(

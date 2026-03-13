@@ -1,0 +1,176 @@
+{
+  "arbeitnow": {
+    "data": [
+      {
+        "slug": "senior-python-developer-london-12345",
+        "company_name": "TechCorp UK",
+        "title": "Senior Python Developer",
+        "description": "<p>We are looking for a Senior Python Developer to join our London team.</p>",
+        "remote": true,
+        "url": "https://www.arbeitnow.com/view/senior-python-developer-london-12345",
+        "tags": ["Python", "Django", "AWS"],
+        "job_types": ["Full-Time"],
+        "location": "London, UK",
+        "created_at": 1741824000
+      },
+      {
+        "slug": "data-engineer-remote-67890",
+        "company_name": "DataFlow Ltd",
+        "title": "Data Engineer",
+        "description": "<p>Remote Data Engineer position available.</p>",
+        "remote": true,
+        "url": "https://www.arbeitnow.com/view/data-engineer-remote-67890",
+        "tags": ["Python", "Spark", "Airflow"],
+        "job_types": ["Full-Time"],
+        "location": "Remote",
+        "created_at": 1741737600
+      }
+    ]
+  },
+  "remoteok": [
+    {
+      "last_updated": 1741824000,
+      "legal": "https://remoteok.com/legal"
+    },
+    {
+      "id": "rok-111222",
+      "epoch": 1741824000,
+      "date": "2025-03-13T00:00:00+00:00",
+      "company": "CloudNine Systems",
+      "position": "Full Stack Engineer",
+      "description": "<p>Build modern web applications with React and Node.js.</p>",
+      "location": "Worldwide",
+      "salary_min": 60000,
+      "salary_max": 90000,
+      "tags": ["react", "node", "typescript"],
+      "url": "https://remoteok.com/remote-jobs/rok-111222"
+    },
+    {
+      "id": "rok-333444",
+      "epoch": 1741737600,
+      "date": "2025-03-12T00:00:00+00:00",
+      "company": "DevOps Co",
+      "position": "Site Reliability Engineer",
+      "description": "<p>SRE role managing Kubernetes infrastructure.</p>",
+      "location": "Europe",
+      "salary_min": 0,
+      "salary_max": 0,
+      "tags": ["kubernetes", "aws", "terraform"],
+      "url": "https://remoteok.com/remote-jobs/rok-333444"
+    }
+  ],
+  "jobicy": {
+    "jobs": [
+      {
+        "id": 98765,
+        "url": "https://jobicy.com/jobs/98765-backend-developer",
+        "jobTitle": "Backend Developer",
+        "companyName": "FintechPro",
+        "jobIndustry": ["Software Development", "Fintech"],
+        "jobType": ["Full-Time"],
+        "jobGeo": "UK",
+        "jobLevel": "Senior",
+        "jobExcerpt": "Backend developer for fintech platform",
+        "jobDescription": "<p>Join our team building next-gen payment infrastructure.</p>",
+        "pubDate": "2025-03-10T09:00:00+00:00",
+        "salaryMin": 55000,
+        "salaryMax": 75000,
+        "salaryCurrency": "GBP",
+        "salaryPeriod": "yearly"
+      }
+    ]
+  },
+  "himalayas": {
+    "jobs": [
+      {
+        "title": "Product Manager",
+        "excerpt": "Lead product strategy for our SaaS platform",
+        "companyName": "SaaSify",
+        "employmentType": "Full-Time",
+        "minSalary": 70000,
+        "maxSalary": 95000,
+        "currency": "GBP",
+        "locationRestrictions": ["UK", "Europe"],
+        "categories": ["Product", "Management"],
+        "seniority": ["Senior"],
+        "description": "We are looking for a Product Manager to lead our platform strategy.",
+        "pubDate": 1741824000,
+        "expiryDate": 1744416000,
+        "applicationLink": "https://himalayas.app/jobs/saasify/product-manager",
+        "guid": "him-pm-001"
+      }
+    ],
+    "totalCount": 1,
+    "offset": 0,
+    "limit": 50
+  },
+  "remotive": {
+    "jobs": [
+      {
+        "id": 55555,
+        "url": "https://remotive.com/remote-jobs/software-dev/55555",
+        "title": "React Developer",
+        "company_name": "WebAgency",
+        "category": "Software Development",
+        "tags": ["react", "javascript", "css"],
+        "job_type": "full_time",
+        "publication_date": "2025-03-11T12:00:00",
+        "candidate_required_location": "UK",
+        "salary": "£45,000 - £65,000",
+        "description": "<p>Frontend React developer for agency projects.</p>"
+      },
+      {
+        "id": 55556,
+        "url": "https://remotive.com/remote-jobs/software-dev/55556",
+        "title": "DevOps Engineer",
+        "company_name": "InfraTeam",
+        "category": "DevOps",
+        "tags": ["docker", "kubernetes", "ci-cd"],
+        "job_type": "full_time",
+        "publication_date": "2025-03-10T08:00:00",
+        "candidate_required_location": "Anywhere",
+        "salary": "",
+        "description": "<p>DevOps engineer to manage CI/CD pipelines.</p>"
+      }
+    ]
+  },
+  "devitjobs": [
+    {
+      "_id": "dit-abc123",
+      "jobUrl": "https://devitjobs.uk/jobs/dit-abc123",
+      "company": "CyberSafe Ltd",
+      "name": "Security Engineer",
+      "jobType": "Full-Time",
+      "expLevel": "Mid",
+      "actualCity": "Manchester",
+      "address": "Manchester, UK",
+      "latitude": 53.4808,
+      "longitude": -2.2426,
+      "annualSalaryFrom": 50000,
+      "annualSalaryTo": 70000,
+      "technologies": ["Python", "Terraform", "AWS"],
+      "activeFrom": "2025-03-09T10:00:00+00:00",
+      "workplace": "Hybrid"
+    }
+  ],
+  "landingjobs": [
+    {
+      "id": 19019,
+      "title": "DevOps Engineer",
+      "type": "Full-time",
+      "remote": true,
+      "role_description": "<div>Manage cloud infrastructure and deployment pipelines.</div>",
+      "published_at": "2025-03-08T09:00:00.000Z",
+      "expires_at": "2025-06-01",
+      "gross_salary_low": 50000,
+      "gross_salary_high": 73000,
+      "currency_code": "EUR",
+      "tags": ["Python", "CI/CD", "Bash", "Docker"],
+      "url": "https://landing.jobs/job/19019",
+      "company_name": "InfraTech Solutions",
+      "locations": [
+        {"city": "London", "country": "United Kingdom"}
+      ]
+    }
+  ]
+}
