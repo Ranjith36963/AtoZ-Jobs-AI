@@ -34,6 +34,7 @@ export interface Database {
           last_synced_at?: string | null;
           config?: Json | null;
         };
+        Relationships: [];
       };
       companies: {
         Row: {
@@ -84,6 +85,7 @@ export interface Database {
           registered_address?: Json | null;
           enriched_at?: string | null;
         };
+        Relationships: [];
       };
       jobs: {
         Row: {
@@ -243,6 +245,22 @@ export interface Database {
           description_hash?: string | null;
           raw_data?: Json | null;
         };
+        Relationships: [
+          {
+            foreignKeyName: "jobs_source_id_fkey";
+            columns: ["source_id"];
+            isOneToOne: false;
+            referencedRelation: "sources";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "jobs_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       skills: {
         Row: {
@@ -275,6 +293,7 @@ export interface Database {
           source?: string | null;
           aliases?: string[] | null;
         };
+        Relationships: [];
       };
       job_skills: {
         Row: {
@@ -295,6 +314,22 @@ export interface Database {
           confidence?: number | null;
           is_required?: boolean | null;
         };
+        Relationships: [
+          {
+            foreignKeyName: "job_skills_job_id_fkey";
+            columns: ["job_id"];
+            isOneToOne: false;
+            referencedRelation: "jobs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "job_skills_skill_id_fkey";
+            columns: ["skill_id"];
+            isOneToOne: false;
+            referencedRelation: "skills";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       esco_skills: {
         Row: {
@@ -321,6 +356,7 @@ export interface Database {
           description?: string | null;
           isco_group?: string | null;
         };
+        Relationships: [];
       };
       user_profiles: {
         Row: {
@@ -365,6 +401,7 @@ export interface Database {
           profile_text?: string | null;
           updated_at?: string | null;
         };
+        Relationships: [];
       };
       ai_decision_audit_log: {
         Row: {
@@ -430,6 +467,7 @@ export interface Database {
           reviewed_by?: string | null;
           review_outcome?: string | null;
         };
+        Relationships: [];
       };
     };
     Views: {
@@ -514,5 +552,6 @@ export interface Database {
       };
     };
     Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 }
