@@ -1,5 +1,7 @@
 "use client";
 
+import { AIDisclosure } from "@/components/ui/AIDisclosure";
+
 interface SalaryBadgeProps {
   salaryAnnualMin: number | null;
   salaryAnnualMax: number | null;
@@ -41,11 +43,14 @@ export function SalaryBadge({
   // Amber: predicted salary
   if (salaryPredictedMin && salaryIsPredicted) {
     return (
-      <span
-        className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-sm font-medium text-amber-800"
-        title="Salary estimated by AI model based on similar roles"
-      >
-        ~{formatRange(salaryPredictedMin, salaryPredictedMax)} (est.)
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-sm font-medium text-amber-800"
+          title="Salary estimated by AI model based on similar roles"
+        >
+          ~{formatRange(salaryPredictedMin, salaryPredictedMax)} (est.)
+        </span>
+        <AIDisclosure variant="inline" />
       </span>
     );
   }

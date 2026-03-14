@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { AIDisclosure } from "@/components/ui/AIDisclosure";
 
 interface MatchExplanationProps {
   query: string;
@@ -74,9 +75,7 @@ function MatchExplanationInner({ query, job }: MatchExplanationProps) {
         <h3 className="text-sm font-semibold text-blue-900">
           Why this matches your search
         </h3>
-        <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-          AI-generated
-        </span>
+        <AIDisclosure variant="badge" />
       </div>
 
       <div aria-live="polite" className="text-sm text-blue-800">
