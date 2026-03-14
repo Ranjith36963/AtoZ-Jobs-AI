@@ -26,6 +26,69 @@ import modal
 
 app = modal.App("atoz-jobs-pipeline")
 
+# Modal Volume for persisting salary model between train and predict invocations
+model_volume = modal.Volume.from_name("atoz-model-store", create_if_missing=True)
+MODEL_VOLUME_PATH = "/model-store"
+
+# Known jobs table columns — used to filter out in-memory-only fields before DB update.
+# Avoids PostgREST 400 errors from keys like extracted_skills, structured_summary, failed_stage.
+_JOBS_TABLE_COLUMNS = {
+    "id",
+    "source_id",
+    "external_id",
+    "source_url",
+    "title",
+    "description",
+    "description_plain",
+    "company_id",
+    "company_name",
+    "location_raw",
+    "location_city",
+    "location_region",
+    "location_postcode",
+    "location_type",
+    "location",
+    "employment_type",
+    "seniority_level",
+    "visa_sponsorship",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "salary_period",
+    "salary_raw",
+    "salary_annual_min",
+    "salary_annual_max",
+    "salary_is_predicted",
+    "salary_predicted_min",
+    "salary_predicted_max",
+    "salary_confidence",
+    "salary_model_version",
+    "category",
+    "category_raw",
+    "contract_type",
+    "soc_code",
+    "esco_occupation_uri",
+    "date_posted",
+    "date_expires",
+    "date_crawled",
+    "status",
+    "retry_count",
+    "last_error",
+    "embedding",
+    "content_hash",
+    "raw_data",
+    "canonical_id",
+    "is_duplicate",
+    "duplicate_score",
+    "description_hash",
+}
+
+
+def _strip_non_db_fields(job_data: dict[str, object]) -> dict[str, object]:
+    """Remove keys not in the jobs table to prevent PostgREST errors."""
+    return {k: v for k, v in job_data.items() if k in _JOBS_TABLE_COLUMNS}
+
+
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install(
@@ -69,11 +132,7 @@ def _resolve_source_ids(db_client: Any, source_names: set[str]) -> dict[str, int
     mapping: dict[str, int] = {}
     for name in source_names:
         result = (
-            db_client.table("sources")
-            .select("id")
-            .eq("name", name)
-            .limit(1)
-            .execute()
+            db_client.table("sources").select("id").eq("name", name).limit(1).execute()
         )
         if result.data:
             mapping[name] = int(result.data[0]["id"])
@@ -329,13 +388,17 @@ async def process_queues() -> None:
 
             if job_data.get("status") != "duplicate":
                 job_data = process_summary(job_data)
+                # Mark as ready — geocoding/embedding are deferred stages
+                job_data["status"] = "ready"
 
-            # Update job in database
-            db_client.table("jobs").update(job_data).eq("id", job_data["id"]).execute()
+            # Strip non-DB fields before update to avoid PostgREST errors
+            db_update = _strip_non_db_fields(job_data)
+            db_client.table("jobs").update(db_update).eq("id", job_data["id"]).execute()
             processed += 1
         except Exception as e:
             job_data = handle_failure(job_data, e, "process_queues")
-            db_client.table("jobs").update(job_data).eq("id", job_data["id"]).execute()
+            db_update = _strip_non_db_fields(job_data)
+            db_client.table("jobs").update(db_update).eq("id", job_data["id"]).execute()
             errors += 1
 
     logger.info("process_queues.complete", processed=processed, errors=errors)
@@ -365,39 +428,44 @@ async def daily_maintenance() -> None:
     ).execute()
     logger.info("expiry_check.complete")
 
-    # Step 2: Retry dead_letter_queue items older than 6 hours
+    # Step 2: Retry failed jobs (status has last_error, retry_count < 3)
     logger.info("dlq_retry.start")
-    six_hours_ago = now.timestamp() - (6 * 3600)
-    dlq_result = db_client.rpc(
-        "pgmq_read",
-        {
-            "queue_name": "dead_letter_queue",
-            "vt": 0,
-            "qty": 50,
-        },
-    ).execute()
-    for msg in dlq_result.data or []:
-        if msg.get("enqueued_at", 0) < six_hours_ago:
-            db_client.rpc(
-                "pgmq_send",
-                {
-                    "queue_name": "parse_queue",
-                    "msg": msg.get("message", {}),
-                },
+    try:
+        failed_result = (
+            db_client.table("jobs")
+            .select("id")
+            .not_.is_("last_error", "null")
+            .lt("retry_count", 3)
+            .limit(50)
+            .execute()
+        )
+        retried = 0
+        for row in failed_result.data or []:
+            db_client.table("jobs").update({"status": "raw", "last_error": None}).eq(
+                "id", row["id"]
             ).execute()
-    logger.info("dlq_retry.complete")
+            retried += 1
+        logger.info("dlq_retry.complete", retried=retried)
+    except Exception as e:
+        logger.error("dlq_retry.failed", error=str(e))
 
     # Step 3: Log pipeline health metrics
     logger.info("health_check.start")
-    health = db_client.rpc("pipeline_health", {}).execute()
-    if health.data:
-        logger.info("health_check.metrics", **health.data[0])
+    try:
+        health = db_client.from_("pipeline_health").select("*").limit(1).execute()
+        if health.data:
+            logger.info("health_check.metrics", **health.data[0])
+    except Exception as e:
+        logger.warning("health_check.skipped", error=str(e))
     logger.info("health_check.complete")
 
     # Monthly reindex on day 1
     if now.day == 1:
         logger.info("monthly_reindex.start")
-        db_client.rpc("reindex_jobs_search", {}).execute()
+        try:
+            db_client.rpc("reindex_jobs_search", {}).execute()
+        except Exception as e:
+            logger.warning("monthly_reindex.skipped", error=str(e))
         logger.info("monthly_reindex.complete")
 
     logger.info("daily_maintenance.complete")
@@ -506,10 +574,11 @@ async def backfill_dedup(batch_size: int = 1000) -> dict[str, Any]:
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("atoz-env")],
+    volumes={MODEL_VOLUME_PATH: model_volume},
     timeout=3600,
 )
 async def train_salary() -> dict[str, Any]:
-    """Train XGBoost salary prediction model."""
+    """Train XGBoost salary prediction model and persist to Modal Volume."""
     import numpy as np
     import structlog
 
@@ -542,8 +611,9 @@ async def train_salary() -> dict[str, Any]:
     features, labels = build_features(jobs)
     model, metrics = train_salary_model(np.array(features), np.array(labels))
 
-    model_path = "/tmp/salary_model.json"
+    model_path = f"{MODEL_VOLUME_PATH}/salary_model.json"
     save_model(model, model_path)
+    model_volume.commit()
 
     logger.info("train_salary.complete", **metrics)
     return metrics
@@ -564,7 +634,13 @@ async def enrich_companies_fn(batch_size: int = 100) -> dict[str, Any]:
     logger.info("enrich_companies.start", batch_size=batch_size)
 
     db_client = _get_db()
-    api_key = os.environ["COMPANIES_HOUSE_API_KEY"]
+    api_key = os.environ.get("COMPANIES_HOUSE_API_KEY", "")
+    if not api_key:
+        logger.warning(
+            "enrich_companies.skipped", reason="COMPANIES_HOUSE_API_KEY not set"
+        )
+        return {"status": "skipped", "reason": "api_key_not_set"}
+
     result = await enrich_companies(db_client, api_key, batch_size)
 
     logger.info("enrich_companies.complete", **result)
@@ -574,10 +650,11 @@ async def enrich_companies_fn(batch_size: int = 100) -> dict[str, Any]:
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("atoz-env")],
+    volumes={MODEL_VOLUME_PATH: model_volume},
     timeout=1800,
 )
 async def predict_salaries(batch_size: int = 500) -> dict[str, Any]:
-    """Predict salaries for jobs missing salary data."""
+    """Predict salaries for jobs missing salary data using persisted model."""
     import structlog
 
     from src.enrichment.orchestrator import predict_missing_salaries
@@ -587,9 +664,10 @@ async def predict_salaries(batch_size: int = 500) -> dict[str, Any]:
     logger.info("predict_salaries.start", batch_size=batch_size)
 
     db_client = _get_db()
-    model_path = "/tmp/salary_model.json"
+    model_path = f"{MODEL_VOLUME_PATH}/salary_model.json"
 
     try:
+        model_volume.reload()
         model = load_model(model_path)
     except Exception:
         logger.error("predict_salaries.model_not_found", path=model_path)
