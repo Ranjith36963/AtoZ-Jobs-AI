@@ -1,9 +1,10 @@
 """Modal serverless app with scheduled cron functions (PLAYBOOK §2.6, Phase 2).
 
-Modal Starter allows 5 deployed crons, so we consolidate:
+Cron functions:
 - fetch_reed: Every 30 min
 - fetch_adzuna: Every 60 min
 - fetch_aggregators: Every 2 hours (Jooble + Careerjet combined)
+- fetch_free_apis: Every 3 hours (7 free sources, no API keys)
 - process_queues: Every 15 min
 - daily_maintenance: Daily at 3 AM (includes monthly_reindex on day 1)
 
@@ -25,6 +26,69 @@ import modal
 
 app = modal.App("atoz-jobs-pipeline")
 
+# Modal Volume for persisting salary model between train and predict invocations
+model_volume = modal.Volume.from_name("atoz-model-store", create_if_missing=True)
+MODEL_VOLUME_PATH = "/model-store"
+
+# Known jobs table columns — used to filter out in-memory-only fields before DB update.
+# Avoids PostgREST 400 errors from keys like extracted_skills, structured_summary, failed_stage.
+_JOBS_TABLE_COLUMNS = {
+    "id",
+    "source_id",
+    "external_id",
+    "source_url",
+    "title",
+    "description",
+    "description_plain",
+    "company_id",
+    "company_name",
+    "location_raw",
+    "location_city",
+    "location_region",
+    "location_postcode",
+    "location_type",
+    "location",
+    "employment_type",
+    "seniority_level",
+    "visa_sponsorship",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "salary_period",
+    "salary_raw",
+    "salary_annual_min",
+    "salary_annual_max",
+    "salary_is_predicted",
+    "salary_predicted_min",
+    "salary_predicted_max",
+    "salary_confidence",
+    "salary_model_version",
+    "category",
+    "category_raw",
+    "contract_type",
+    "soc_code",
+    "esco_occupation_uri",
+    "date_posted",
+    "date_expires",
+    "date_crawled",
+    "status",
+    "retry_count",
+    "last_error",
+    "embedding",
+    "content_hash",
+    "raw_data",
+    "canonical_id",
+    "is_duplicate",
+    "duplicate_score",
+    "description_hash",
+}
+
+
+def _strip_non_db_fields(job_data: dict[str, object]) -> dict[str, object]:
+    """Remove keys not in the jobs table to prevent PostgREST errors."""
+    return {k: v for k, v in job_data.items() if k in _JOBS_TABLE_COLUMNS}
+
+
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install(
@@ -35,6 +99,7 @@ image = (
         "structlog",
         "numpy",
         "supabase",
+        "postgrest",
         "beautifulsoup4",
         # Phase 2 dependencies
         "spacy>=3.7",
@@ -62,6 +127,31 @@ def _get_db() -> Any:
     )
 
 
+def _resolve_source_ids(db_client: Any, source_names: set[str]) -> dict[str, int]:
+    """Look up or create source records, returning {name: id} mapping."""
+    mapping: dict[str, int] = {}
+    for name in source_names:
+        result = (
+            db_client.table("sources").select("id").eq("name", name).limit(1).execute()
+        )
+        if result.data:
+            mapping[name] = int(result.data[0]["id"])
+        else:
+            insert_result = (
+                db_client.table("sources")
+                .insert({"name": name, "is_active": True})
+                .execute()
+            )
+            mapping[name] = int(insert_result.data[0]["id"])
+    return mapping
+
+
+# Fields in JobBase that do not map directly to jobs table columns.
+# latitude/longitude are handled later by the geocode pipeline stage
+# (stored as a PostGIS GEOGRAPHY point, not separate columns).
+_EXCLUDE_FROM_UPSERT = {"source_name", "latitude", "longitude"}
+
+
 def _upsert_jobs(db_client: Any, jobs: list[Any]) -> int:
     """UPSERT collected jobs into the jobs table.
 
@@ -75,16 +165,27 @@ def _upsert_jobs(db_client: Any, jobs: list[Any]) -> int:
     import structlog
 
     logger = structlog.get_logger()
-    rows = [j.model_dump() for j in jobs]
-    if not rows:
+    if not jobs:
         return 0
+
+    # Resolve source_name → source_id
+    source_names = {j.source_name for j in jobs}
+    source_map = _resolve_source_ids(db_client, source_names)
+
+    rows: list[dict[str, object]] = []
+    for j in jobs:
+        row = j.model_dump(mode="json")
+        row["source_id"] = source_map[j.source_name]
+        for key in _EXCLUDE_FROM_UPSERT:
+            row.pop(key, None)
+        rows.append(row)
 
     batch_size = 500
     total = 0
     for i in range(0, len(rows), batch_size):
         batch = rows[i : i + batch_size]
         db_client.table("jobs").upsert(
-            batch, on_conflict="source_id,source_name"
+            batch, on_conflict="source_id,external_id"
         ).execute()
         total += len(batch)
 
@@ -111,7 +212,10 @@ async def fetch_reed() -> None:
     from src.collectors.reed import ReedCollector
 
     logger = structlog.get_logger()
-    api_key = os.environ["REED_API_KEY"]
+    api_key = os.environ.get("REED_API_KEY", "")
+    if not api_key:
+        logger.warning("fetch_reed.skipped", reason="REED_API_KEY not set")
+        return
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         collector = ReedCollector(client=client, api_key=api_key)
@@ -137,8 +241,11 @@ async def fetch_adzuna() -> None:
     from src.collectors.adzuna import AdzunaCollector
 
     logger = structlog.get_logger()
-    app_id = os.environ["ADZUNA_APP_ID"]
-    app_key = os.environ["ADZUNA_APP_KEY"]
+    app_id = os.environ.get("ADZUNA_APP_ID", "")
+    app_key = os.environ.get("ADZUNA_APP_KEY", "")
+    if not app_id or not app_key:
+        logger.warning("fetch_adzuna.skipped", reason="ADZUNA credentials not set")
+        return
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         collector = AdzunaCollector(client=client, app_id=app_id, app_key=app_key)
@@ -168,29 +275,67 @@ async def fetch_aggregators() -> None:
     all_jobs: list[object] = []
 
     # Jooble
-    jooble_key = os.environ["JOOBLE_API_KEY"]
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        jooble = JoobleCollector(client=client, api_key=jooble_key)
-        jooble_jobs = await jooble.sweep_all()
-        all_jobs.extend(jooble_jobs)
-        logger.info("fetch_jooble.complete", jobs_collected=len(jooble_jobs))
+    jooble_key = os.environ.get("JOOBLE_API_KEY", "")
+    if not jooble_key:
+        logger.warning("fetch_jooble.skipped", reason="JOOBLE_API_KEY not set")
+    else:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            jooble = JoobleCollector(client=client, api_key=jooble_key)
+            jooble_jobs = await jooble.sweep_all()
+            all_jobs.extend(jooble_jobs)
+            logger.info("fetch_jooble.complete", jobs_collected=len(jooble_jobs))
 
     # Careerjet
-    careerjet_affid = os.environ["CAREERJET_AFFID"]
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        careerjet = CareerjetCollector(
-            client=client,
-            affid=careerjet_affid,
-            user_ip=os.environ.get("MODAL_WORKER_IP", "0.0.0.0"),
-            user_agent="AtoZ-Jobs-Pipeline/0.1",
-        )
-        careerjet_jobs = await careerjet.sweep_all()
-        all_jobs.extend(careerjet_jobs)
-        logger.info("fetch_careerjet.complete", jobs_collected=len(careerjet_jobs))
+    careerjet_affid = os.environ.get("CAREERJET_AFFID", "")
+    if not careerjet_affid:
+        logger.warning("fetch_careerjet.skipped", reason="CAREERJET_AFFID not set")
+    else:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            careerjet = CareerjetCollector(
+                client=client,
+                affid=careerjet_affid,
+                user_ip=os.environ.get("MODAL_WORKER_IP", "0.0.0.0"),
+                user_agent="AtoZ-Jobs-Pipeline/0.1",
+            )
+            careerjet_jobs = await careerjet.sweep_all()
+            all_jobs.extend(careerjet_jobs)
+            logger.info("fetch_careerjet.complete", jobs_collected=len(careerjet_jobs))
 
     db_client = _get_db()
     upserted = _upsert_jobs(db_client, all_jobs)
     logger.info("fetch_aggregators.complete", jobs_upserted=upserted)
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("atoz-env")],
+    schedule=modal.Cron("30 */3 * * *"),
+    timeout=900,
+)
+async def fetch_free_apis() -> None:
+    """Fetch jobs from 7 free API sources every 3 hours (no API keys needed).
+
+    Sources: Arbeitnow, RemoteOK, Jobicy, Himalayas, Remotive, DevITjobs, Landing.jobs.
+    Filters for UK/Remote jobs.
+    """
+    import httpx
+    import structlog
+
+    from src.collectors.free_apis import fetch_all_free_sources
+
+    logger = structlog.get_logger()
+    logger.info("fetch_free_apis.start")
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        jobs = await fetch_all_free_sources(client)
+        logger.info("fetch_free_apis.collected", jobs_collected=len(jobs))
+
+    if jobs:
+        db_client = _get_db()
+        upserted = _upsert_jobs(db_client, jobs)
+        logger.info("fetch_free_apis.complete", jobs_upserted=upserted)
+    else:
+        logger.warning("fetch_free_apis.no_jobs")
 
 
 @app.function(
@@ -243,13 +388,17 @@ async def process_queues() -> None:
 
             if job_data.get("status") != "duplicate":
                 job_data = process_summary(job_data)
+                # Mark as ready — geocoding/embedding are deferred stages
+                job_data["status"] = "ready"
 
-            # Update job in database
-            db_client.table("jobs").update(job_data).eq("id", job_data["id"]).execute()
+            # Strip non-DB fields before update to avoid PostgREST errors
+            db_update = _strip_non_db_fields(job_data)
+            db_client.table("jobs").update(db_update).eq("id", job_data["id"]).execute()
             processed += 1
         except Exception as e:
             job_data = handle_failure(job_data, e, "process_queues")
-            db_client.table("jobs").update(job_data).eq("id", job_data["id"]).execute()
+            db_update = _strip_non_db_fields(job_data)
+            db_client.table("jobs").update(db_update).eq("id", job_data["id"]).execute()
             errors += 1
 
     logger.info("process_queues.complete", processed=processed, errors=errors)
@@ -279,39 +428,44 @@ async def daily_maintenance() -> None:
     ).execute()
     logger.info("expiry_check.complete")
 
-    # Step 2: Retry dead_letter_queue items older than 6 hours
+    # Step 2: Retry failed jobs (status has last_error, retry_count < 3)
     logger.info("dlq_retry.start")
-    six_hours_ago = now.timestamp() - (6 * 3600)
-    dlq_result = db_client.rpc(
-        "pgmq_read",
-        {
-            "queue_name": "dead_letter_queue",
-            "vt": 0,
-            "qty": 50,
-        },
-    ).execute()
-    for msg in dlq_result.data or []:
-        if msg.get("enqueued_at", 0) < six_hours_ago:
-            db_client.rpc(
-                "pgmq_send",
-                {
-                    "queue_name": "parse_queue",
-                    "msg": msg.get("message", {}),
-                },
+    try:
+        failed_result = (
+            db_client.table("jobs")
+            .select("id")
+            .not_.is_("last_error", "null")
+            .lt("retry_count", 3)
+            .limit(50)
+            .execute()
+        )
+        retried = 0
+        for row in failed_result.data or []:
+            db_client.table("jobs").update({"status": "raw", "last_error": None}).eq(
+                "id", row["id"]
             ).execute()
-    logger.info("dlq_retry.complete")
+            retried += 1
+        logger.info("dlq_retry.complete", retried=retried)
+    except Exception as e:
+        logger.error("dlq_retry.failed", error=str(e))
 
     # Step 3: Log pipeline health metrics
     logger.info("health_check.start")
-    health = db_client.rpc("pipeline_health", {}).execute()
-    if health.data:
-        logger.info("health_check.metrics", **health.data[0])
+    try:
+        health = db_client.from_("pipeline_health").select("*").limit(1).execute()
+        if health.data:
+            logger.info("health_check.metrics", **health.data[0])
+    except Exception as e:
+        logger.warning("health_check.skipped", error=str(e))
     logger.info("health_check.complete")
 
     # Monthly reindex on day 1
     if now.day == 1:
         logger.info("monthly_reindex.start")
-        db_client.rpc("reindex_jobs_search", {}).execute()
+        try:
+            db_client.rpc("reindex_jobs_search", {}).execute()
+        except Exception as e:
+            logger.warning("monthly_reindex.skipped", error=str(e))
         logger.info("monthly_reindex.complete")
 
     logger.info("daily_maintenance.complete")
@@ -330,21 +484,25 @@ async def daily_maintenance() -> None:
 async def seed_esco(csv_path: str = "data/esco_skills.csv") -> dict[str, Any]:
     """One-time ESCO taxonomy load into skills tables.
 
-    If the ESCO CSV is not found, seeds from the built-in dictionary only
-    (~450+ UK patterns). The ESCO CSV adds ~13K additional skills.
+    Priority: CSV file > ESCO REST API > dictionary-only fallback.
+    The ESCO API downloads ~14,500 skills when the CSV is not available.
     """
     import os
 
     import structlog
 
-    from src.skills.seed_esco import seed_esco_skills, seed_skills_table
+    from src.skills.seed_esco import (
+        seed_esco_from_api,
+        seed_esco_skills,
+        seed_skills_table,
+    )
 
     logger = structlog.get_logger()
     logger.info("seed_esco.start", csv_path=csv_path)
 
     db_client = _get_db()
 
-    # Seed esco_skills table only if CSV exists
+    # Seed esco_skills table: CSV > API > skip
     esco_count = 0
     effective_csv: str | None = csv_path
     if os.path.exists(csv_path):
@@ -352,6 +510,11 @@ async def seed_esco(csv_path: str = "data/esco_skills.csv") -> dict[str, Any]:
     else:
         logger.warning("seed_esco.csv_not_found", path=csv_path)
         effective_csv = None
+        # Fallback: download from ESCO REST API
+        try:
+            esco_count = await seed_esco_from_api(db_client)
+        except Exception as e:
+            logger.error("seed_esco.api_fallback_failed", error=str(e))
 
     # Seed skills table from dictionary (works with or without CSV)
     skills_count = await seed_skills_table(db_client, effective_csv)
@@ -411,10 +574,11 @@ async def backfill_dedup(batch_size: int = 1000) -> dict[str, Any]:
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("atoz-env")],
+    volumes={MODEL_VOLUME_PATH: model_volume},
     timeout=3600,
 )
 async def train_salary() -> dict[str, Any]:
-    """Train XGBoost salary prediction model."""
+    """Train XGBoost salary prediction model and persist to Modal Volume."""
     import numpy as np
     import structlog
 
@@ -447,8 +611,9 @@ async def train_salary() -> dict[str, Any]:
     features, labels = build_features(jobs)
     model, metrics = train_salary_model(np.array(features), np.array(labels))
 
-    model_path = "/tmp/salary_model.json"
+    model_path = f"{MODEL_VOLUME_PATH}/salary_model.json"
     save_model(model, model_path)
+    model_volume.commit()
 
     logger.info("train_salary.complete", **metrics)
     return metrics
@@ -469,7 +634,13 @@ async def enrich_companies_fn(batch_size: int = 100) -> dict[str, Any]:
     logger.info("enrich_companies.start", batch_size=batch_size)
 
     db_client = _get_db()
-    api_key = os.environ["COMPANIES_HOUSE_API_KEY"]
+    api_key = os.environ.get("COMPANIES_HOUSE_API_KEY", "")
+    if not api_key:
+        logger.warning(
+            "enrich_companies.skipped", reason="COMPANIES_HOUSE_API_KEY not set"
+        )
+        return {"status": "skipped", "reason": "api_key_not_set"}
+
     result = await enrich_companies(db_client, api_key, batch_size)
 
     logger.info("enrich_companies.complete", **result)
@@ -479,10 +650,11 @@ async def enrich_companies_fn(batch_size: int = 100) -> dict[str, Any]:
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("atoz-env")],
+    volumes={MODEL_VOLUME_PATH: model_volume},
     timeout=1800,
 )
 async def predict_salaries(batch_size: int = 500) -> dict[str, Any]:
-    """Predict salaries for jobs missing salary data."""
+    """Predict salaries for jobs missing salary data using persisted model."""
     import structlog
 
     from src.enrichment.orchestrator import predict_missing_salaries
@@ -492,9 +664,10 @@ async def predict_salaries(batch_size: int = 500) -> dict[str, Any]:
     logger.info("predict_salaries.start", batch_size=batch_size)
 
     db_client = _get_db()
-    model_path = "/tmp/salary_model.json"
+    model_path = f"{MODEL_VOLUME_PATH}/salary_model.json"
 
     try:
+        model_volume.reload()
         model = load_model(model_path)
     except Exception:
         logger.error("predict_salaries.model_not_found", path=model_path)
