@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest *)", "Bash(uv run ruff *)", "Bash(uv run mypy *)",
+      "Bash(pnpm test *)", "Bash(pnpm lint *)", "Bash(pnpm typecheck)",
+      "Bash(just *)", "Bash(git status *)", "Bash(git diff *)",
+      "Read(./pipeline/**)", "Edit(./pipeline/**)",
+      "Read(./web/**)", "Edit(./web/**)",
+      "Read(./supabase/**)", "Edit(./supabase/**)",
+      "Read(./docs/**)", "Edit(./docs/**)"
+    ],
+    "deny": [
+      "Read(./.env)", "Read(./.env.*)", "Read(./.env.local)",
+      "Read(./secrets/**)",
+      "Bash(git push --force *)", "Bash(git reset --hard *)",
+      "Bash(rm -rf *)",
+      "Bash(*drop*database*)", "Bash(*truncate*)",
+      "Bash(*migrate reset*--force*)", "Bash(*--production*)"
+    ]
+  }
+}

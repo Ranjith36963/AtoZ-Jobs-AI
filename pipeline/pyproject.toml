@@ -1,0 +1,148 @@
+[project]
+name = "atoz-jobs-pipeline"
+version = "0.2.0"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.12",
+    "google-genai>=1.0",
+    "structlog>=24.0",
+    "numpy>=1.26",
+    "supabase>=2.0",
+    "postgrest>=0.19",
+    "beautifulsoup4>=4.12",
+    "modal>=0.68",
+    "spacy>=3.7",
+    "datasketch>=1.6",
+    "xxhash>=3.0",
+    "xgboost>=2.0",
+    "scikit-learn>=1.4",
+    "sentence-transformers>=2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "hypothesis>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-beautifulsoup4>=4.12",
+    "faker>=33.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["src/tests"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "src/tests/phase2_gate_checks.py",
+    "src/tests/gate1_checks.py",
+    "src/tests/gate234_checks.py",
+    "src/tests/e2e_pipeline.py",
+    "src/skills/seed_esco.py",
+]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["openai", "openai.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["spacy", "spacy.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["datasketch", "datasketch.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["xxhash", "xxhash.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["xgboost", "xgboost.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["sklearn", "sklearn.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["sentence_transformers", "sentence_transformers.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["structlog", "structlog.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["httpx", "httpx.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["modal", "modal.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pydantic", "pydantic.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pytest", "pytest.*", "_pytest", "_pytest.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["hypothesis", "hypothesis.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["google", "google.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["bs4", "bs4.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["supabase", "supabase.*", "postgrest", "postgrest.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["faker", "faker.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["src.embeddings.gemini"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["src.tests.*"]
+disallow_untyped_decorators = false
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = ["src.models.job"]
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = ["src.modal_app"]
+disallow_untyped_decorators = false
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.0.0",
+]
