@@ -2,7 +2,12 @@
 
 import { useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { SalaryRangeSlider } from "./SalaryRangeSlider";
+import dynamic from "next/dynamic";
+
+const SalaryRangeSlider = dynamic(
+  () => import("./SalaryRangeSlider").then((m) => m.SalaryRangeSlider),
+  { ssr: false },
+);
 import type { FacetCounts } from "@/types";
 
 interface FilterSidebarProps {

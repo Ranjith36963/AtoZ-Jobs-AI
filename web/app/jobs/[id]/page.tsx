@@ -5,9 +5,26 @@ import { SalaryBadge } from "@/components/jobs/SalaryBadge";
 import { SkillsPills } from "@/components/jobs/SkillsPills";
 import { CompanyInfo } from "@/components/jobs/CompanyInfo";
 import { ApplyButton } from "@/components/jobs/ApplyButton";
-import { MatchExplanation } from "@/components/jobs/MatchExplanation";
+import { LazyMatchExplanation } from "@/components/jobs/LazyMatchExplanation";
 
 export const revalidate = 1800; // ISR: 30 minutes
+
+export async function generateStaticParams() {
+  try {
+    const { createClient } = await import("@/lib/supabase/server");
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("jobs")
+      .select("id")
+      .eq("status", "ready")
+      .order("date_posted", { ascending: false })
+      .limit(100);
+
+    return (data ?? []).map((row) => ({ id: String((row as { id: number }).id) }));
+  } catch {
+    return [];
+  }
+}
 
 interface JobPageProps {
   params: Promise<{ id: string }>;
@@ -123,7 +140,7 @@ export default async function JobPage({ params, searchParams }: JobPageProps) {
       {/* 8. Match Explanation (client component, loaded dynamically) */}
       {q && (
         <div className="mt-6">
-          <MatchExplanation
+          <LazyMatchExplanation
             query={q}
             job={{
               id: job.id,

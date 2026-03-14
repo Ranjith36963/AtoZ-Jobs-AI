@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+export const revalidate = 3600; // ISR: 1 hour
+
 const FEATURED_CATEGORIES = [
   { name: "Technology", slug: "technology", count: null },
   { name: "Healthcare", slug: "healthcare", count: null },
