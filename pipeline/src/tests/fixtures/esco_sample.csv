@@ -1,0 +1,23 @@
+conceptUri,skillType,preferredLabel,altLabels,description
+http://data.europa.eu/esco/skill/001,skill/competence,Python,"Python programming
+Python 3
+Py",Use Python programming language
+http://data.europa.eu/esco/skill/002,skill/competence,project management,"PM
+managing projects",Plan and execute projects
+http://data.europa.eu/esco/skill/003,knowledge,data analysis,"data analytics
+analysing data",Analyse and interpret data
+http://data.europa.eu/esco/skill/004,skill/competence,JavaScript,"JS
+ECMAScript",Use JavaScript programming language
+http://data.europa.eu/esco/skill/005,skill/competence,communication skills,"oral communication
+written communication
+verbal communication",Communicate effectively
+http://data.europa.eu/esco/skill/006,skill/competence,teamwork,"team collaboration
+working in teams",Work effectively in a team
+http://data.europa.eu/esco/skill/007,knowledge,machine learning,"ML
+statistical learning",Apply machine learning algorithms
+http://data.europa.eu/esco/skill/008,skill/competence,SQL,structured query language,Query relational databases
+http://data.europa.eu/esco/skill/009,skill/competence,Docker,"containerisation
+containerization",Use Docker containers
+http://data.europa.eu/esco/skill/010,skill/competence,leadership,"team leadership
+leading teams
+XY",Lead and motivate teams
