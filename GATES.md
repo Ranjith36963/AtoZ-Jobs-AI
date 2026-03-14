@@ -1,4 +1,4 @@
-# AtoZ Jobs AI — Phase 2 Quality Gates
+# AtoZ Jobs AI — Phase 3 Quality Gates
 
 **How to verify it works. Pass/fail criteria for every stage.**
 
@@ -8,327 +8,313 @@ Version: 1.0 · March 2026 · Companion to: SPEC.md (what) and PLAYBOOK.md (how)
 
 ## 1. Stage Gates — Pass/Fail Criteria
 
-### 1.1 Gate 1: Skills Extraction & Taxonomy (Week 5)
+### 1.1 Gate 1: Foundation (Week 9)
 
-Run these checks before completing Stage 1 on `search-match-phase`.
-
-| # | Check | Command | Pass criteria |
-|---|---|---|---|
-| S1 | Migration 007 | `supabase db reset` | Completes with zero errors. All Phase 1 + Phase 2 migrations applied. |
-| S2 | Rollback 007 | Run `down.sql`, then `supabase db reset` | Clean rollback. Full chain re-applies. |
-| S3 | esco_skills loaded | `SELECT count(*) FROM esco_skills` | ≥ 13,000 rows (ESCO v1.2.1 has ~13,939). |
-| S4 | skills table populated | `SELECT count(*) FROM skills` | ≥ 10,000 canonical skills. |
-| S5 | UK-specific entries | `SELECT count(*) FROM skills WHERE name IN ('CSCS Card', 'CIPD', 'NMC Registered', 'SIA Licence', 'ACCA')` | Returns 5 rows. |
-| S6 | SpaCy: Python + AWS | `uv run pytest tests/test_spacy_matcher.py::test_python_aws` | "Python developer with AWS experience" extracts at least `['Python', 'AWS']`. |
-| S7 | SpaCy: UK certs | `uv run pytest tests/test_spacy_matcher.py::test_uk_certs` | "CSCS card holder with SMSTS" extracts at least `['CSCS Card', 'SMSTS']`. |
-| S8 | SpaCy: healthcare | `uv run pytest tests/test_spacy_matcher.py::test_healthcare` | "NMC registered nurse with enhanced DBS" extracts at least `['NMC Registered', 'DBS Check']`. |
-| S9 | Max 15 skills | `uv run pytest tests/test_spacy_matcher.py::test_max_skills` | Job description with 20+ skill mentions → exactly 15 returned. |
-| S10 | job_skills populated | `SELECT count(*) FROM job_skills` | > 0 after backfill. Average ~5–10 skills per job. |
-| S11 | No orphans | `SELECT count(*) FROM job_skills js LEFT JOIN skills s ON s.id = js.skill_id WHERE s.id IS NULL` | Returns 0. |
-| S12 | mv_skill_demand | `SELECT * FROM mv_skill_demand ORDER BY job_count DESC LIMIT 10` | Returns rows. Top skills are recognizable (Python, JavaScript, Project Management, etc). |
-| S13 | mv_skill_cooccurrence | `SELECT * FROM mv_skill_cooccurrence ORDER BY cooccurrence_count DESC LIMIT 10` | Returns rows. Pairs make sense (Python + Django, AWS + Docker, etc). |
-| S14 | Cron refresh | `SELECT * FROM cron.job WHERE jobname LIKE 'refresh-skill%'` | 2 cron jobs exist. |
-| S15 | Processing rate | Time the backfill_job_skills Modal function on 5,000 jobs | ≥ 5,000 jobs/minute (≤ 60 seconds). |
-| S16 | Coverage | `uv run pytest --cov=src/skills --cov-fail-under=85` | ≥ 85% line coverage on skills/. |
-
-**FAIL gate:** S1–S11 are hard failures. S12–S16 are soft (should pass but non-blocking for merge).
-
-### 1.2 Gate 2: Advanced Deduplication (Week 6)
-
-Run these checks before completing Stage 2 on `search-match-phase`.
+Run these checks before completing Stage 1 (Foundation) on `display-phase`.
 
 | # | Check | Command | Pass criteria |
 |---|---|---|---|
-| D1 | Migration 008 | `supabase db reset` | Completes with zero errors. |
-| D2 | Rollback 008 | Run `down.sql`, then `supabase db reset` | Clean rollback. |
-| D3 | compute_duplicate_score | `SELECT compute_duplicate_score(0.7, true, 3.0, 0.8, 5)` | Returns 0.35*0.7 + 0.25*1 + 0.15*1 + 0.15*0.8 + 0.10*1 = 0.245 + 0.25 + 0.15 + 0.12 + 0.10 = 0.865. |
-| D4 | pg_trgm title match | `SELECT similarity('Senior Python Developer', 'Senior Python Dev')` | ≥ 0.6. |
-| D5 | pg_trgm company match | `SELECT similarity('Goldman Sachs International', 'Goldman Sachs')` | ≥ 0.5. |
-| D6 | pg_trgm negative | `SELECT similarity('Python Developer', 'Chef')` | < 0.3. |
-| D7 | Fuzzy candidates | `uv run pytest tests/test_fuzzy_matcher.py` | All tests pass. Known duplicate pairs flagged. Non-duplicates excluded. |
-| D8 | MinHash similar | `uv run pytest tests/test_minhash.py::test_similar_texts` | Jaccard > 0.5 for reformatted same-content texts. |
-| D9 | MinHash different | `uv run pytest tests/test_minhash.py::test_different_texts` | Jaccard < 0.3 for unrelated texts. |
-| D10 | Canonical selection | `uv run pytest tests/test_fuzzy_matcher.py::test_pick_canonical` | Richest version kept. Poorer version gets `is_duplicate=TRUE`, `canonical_id` set. |
-| D11 | Duplicate count | `SELECT count(*) FROM jobs WHERE is_duplicate = TRUE` after dedup run | > 0 (some duplicates found). |
-| D12 | Canonical FK valid | `SELECT count(*) FROM jobs j WHERE j.canonical_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM jobs c WHERE c.id = j.canonical_id)` | Returns 0 (no broken references). |
-| D13 | Precision estimate | Manually review 100 marked duplicates | ≥ 85% are true duplicates. |
-| D14 | No false negatives | Manually check 20 known near-duplicate pairs (same job, different sources) | ≥ 80% detected by at least one dedup stage. |
-| D15 | Performance | Time the full dedup scan on production data | Completes in < 3 hours for 500K jobs. |
-| D16 | Coverage | `uv run pytest --cov=src/dedup --cov-fail-under=85` | ≥ 85% line coverage on dedup/. |
+| F1 | Next.js version | `pnpm list next` | `next@>=16.1.6`. CVE-2025-66478 patched. |
+| F2 | Security audit | `pnpm audit` | Zero critical vulnerabilities. |
+| F3 | Dev server starts | `pnpm dev` | Starts in < 3 seconds with Turbopack. No errors. |
+| F4 | TypeScript strict | `pnpm typecheck` | Zero errors. `strict: true` in tsconfig.json. |
+| F5 | Supabase types | Check `web/types/database.ts` | Contains all tables: `sources`, `companies`, `jobs`, `skills`, `job_skills`, `esco_skills`, `user_profiles`, `ai_decision_audit_log`. |
+| F6 | tRPC health | `GET /api/trpc/facets.counts` | Returns valid JSON (empty array is OK). No 500 error. |
+| F7 | Server Supabase client | Import and call `createClient()` in a server component | Returns Supabase client without error. |
+| F8 | Browser Supabase client | Import and call `createClient()` in a client component | Returns Supabase client without error. |
+| F9 | Admin client isolation | Check `web/lib/supabase/admin.ts` | Uses `SUPABASE_SERVICE_ROLE_KEY`. Not importable from any client component. |
+| F10 | Sentry integration | Throw test error in page component | Error appears in Sentry dashboard within 30 seconds. |
+| F11 | PostHog integration | Load homepage | Page view event appears in PostHog dashboard. |
+| F12 | Layout renders | `pnpm dev` → load homepage | Header, hero, footer all visible. Skip link visible on Tab. |
+| F13 | Migration 011 | `supabase db reset` | `ai_decision_audit_log` table exists with all columns from SPEC.md §1.1. |
+| F14 | Migration 012 | `SELECT * FROM mv_search_facets` | Returns rows (empty OK on fresh DB). No SQL error. |
+| F15 | Salary histogram | `SELECT * FROM mv_salary_histogram` | Returns rows (empty OK). No SQL error. |
+| F16 | Migration rollback | Run `down.sql` for 012, 011, then `supabase db reset` | Each down succeeds. Full chain re-applies cleanly. |
+| F17 | CF Pages build | `pnpm build:cf` | OpenNext build completes. No errors. |
+| F18 | Worker bundle size | Check `.open-next/` output | Total worker bundle < 3 MiB. |
+| F19 | CF Pages deploy | `wrangler pages deploy` | Site accessible at `<project>.pages.dev`. Homepage renders. |
+| F20 | Environment vars | Check Cloudflare dashboard | All env vars from SPEC.md §5.2 set. |
+| F21 | Keyboard navigation | Tab through homepage | Every interactive element has visible focus ring. |
 
-**FAIL gate:** D1–D12 are hard failures. D13–D16 are soft (require manual review).
+**FAIL gate:** F1–F9, F13–F16, F17–F18 are hard failures. F10–F12, F19–F21 are soft (expected to pass, fix in Stage 2 if needed).
 
-### 1.3 Gate 3: Salary Prediction & Company Enrichment (Week 7)
+### 1.2 Gate 2: Search Interface (Week 10)
 
-Run these checks before completing Stage 3 on `search-match-phase`.
-
-| # | Check | Command | Pass criteria |
-|---|---|---|---|
-| P1 | Migration 009 | `supabase db reset` | Completes with zero errors. |
-| P2 | Rollback 009 | Run `down.sql`, then `supabase db reset` | Clean rollback. |
-| P3 | SIC map seeded | `SELECT count(*) FROM sic_industry_map` | Returns 21 rows (sections A–U). |
-| P4 | SIC mapping correct | `SELECT internal_category FROM sic_industry_map WHERE sic_section = 'J'` | Returns 'Technology'. |
-| P5 | Feature engineering | `uv run pytest tests/test_salary_features.py` | All features extracted. Matrix shape correct. No NaN in features. |
-| P6 | Model trains | `uv run pytest tests/test_salary_trainer.py::test_train` | Model trains without error on ≥ 50K samples. |
-| P7 | MAE acceptable | `uv run pytest tests/test_salary_trainer.py::test_mae` | MAE < £8,000 on test set. |
-| P8 | Prediction sanity | `uv run pytest tests/test_salary_trainer.py::test_sanity` | No predictions < £10,000 or > £500,000. |
-| P9 | Salary stored | `SELECT count(*) FROM jobs WHERE salary_predicted_max IS NOT NULL AND salary_is_predicted = TRUE` after predict run | > 0. |
-| P10 | Confidence scored | `SELECT DISTINCT salary_confidence FROM jobs WHERE salary_predicted_max IS NOT NULL` | Returns values in range [0, 1]. |
-| P11 | CH: search works | `uv run pytest tests/test_companies_house.py::test_search` | Mock search returns parsed company data. |
-| P12 | CH: SIC to section | `uv run pytest tests/test_companies_house.py::test_sic_mapping` | "62020" → "J". "86101" → "Q". "47110" → "G". |
-| P13 | CH: rate limit | `uv run pytest tests/test_companies_house.py::test_rate_limit` | 429 response → backs off and retries. No crash. |
-| P14 | Companies enriched | `SELECT count(*) FROM companies WHERE enriched_at IS NOT NULL` after enrichment run | > 0. |
-| P15 | SIC codes stored | `SELECT count(*) FROM companies WHERE sic_codes IS NOT NULL AND array_length(sic_codes, 1) > 0` | > 0. |
-| P16 | Model persistence | Save model → load model → predict on same data | Same predictions (within floating point tolerance). |
-| P17 | Coverage: salary | `uv run pytest --cov=src/salary --cov-fail-under=85` | ≥ 85% line coverage. |
-| P18 | Coverage: enrichment | `uv run pytest --cov=src/enrichment --cov-fail-under=85` | ≥ 85% line coverage. |
-
-**FAIL gate:** P1–P9, P11–P14 are hard failures. P10, P15–P18 are soft.
-
-### 1.4 Gate 4: Cross-Encoder Re-ranking (Week 8)
-
-Run these checks before squash-merging `search-match-phase` → `main`.
+Run these checks before completing Stage 2 (Search Interface) on `display-phase`.
 
 | # | Check | Command | Pass criteria |
 |---|---|---|---|
-| R1 | Migration 010 | `supabase db reset` | Completes with zero errors. All 10 migrations (001–010) applied. |
-| R2 | Rollback 010 | Run `down.sql`, then `supabase db reset` | Clean rollback. |
-| R3 | user_profiles table | `\d user_profiles` | All columns present. `profile_embedding HALFVEC(768)`. |
-| R4 | RLS: own profile | Insert profile as user A, query as user B | User B sees 0 rows. User A sees 1 row. |
-| R5 | search_jobs_v2 callable | `SELECT * FROM search_jobs_v2(query_text := 'developer')` | Returns results with 18 columns. No SQL error. |
-| R6 | search_jobs_v2 filters | `SELECT * FROM search_jobs_v2(query_text := 'developer', category_filter := 'Technology', exclude_duplicates := true)` | Returns only Technology category, no duplicates. |
-| R7 | search_jobs_v2 skills | `SELECT * FROM search_jobs_v2(skill_filters := ARRAY['Python', 'AWS'])` | Returns only jobs with Python AND/OR AWS in job_skills. |
-| R8 | Cross-encoder loads | `uv run pytest tests/test_reranker.py::test_model_loads` | Model loads in < 5 seconds. |
-| R9 | Cross-encoder relevance | `uv run pytest tests/test_reranker.py::test_relevance` | "Python developer" query: Python job scores higher than Chef job. |
-| R10 | Cross-encoder speed | `uv run pytest tests/test_reranker.py::test_speed` | 50 pairs scored in < 2 seconds on CPU. |
-| R11 | Re-ranking improves | Run 50 test queries from §2. Compare RRF-only vs RRF+re-rank. | ≥ 60% of queries: top-1 result is same or better with re-ranking (manual assessment). |
-| R12 | Profile embedding | `uv run pytest tests/test_profile_handler.py::test_embedding` | Profile text → 768-dim vector. |
-| R13 | Profile personalization | Create profile "Python developer in Manchester". Search "developer". | Manchester Python jobs rank higher than unrelated jobs. |
-| R14 | Graceful degradation | Kill cross-encoder (mock unavailable). Run search. | Returns RRF results without re-ranking. No crash. No error to user. |
-| R15 | E2E search latency | Time full search pipeline: embed query → search_jobs_v2 → rerank | < 3 seconds total. |
-| R16 | search_jobs (Phase 1) | `SELECT * FROM search_jobs(query_text := 'developer')` | Still works. Phase 1 function not broken. |
-| R17 | Coverage: total | `uv run pytest --cov=src --cov-fail-under=80` | ≥ 80% line coverage across entire pipeline. |
-| R18 | Lint + types | `uv run ruff check . && uv run mypy src/` | Zero errors. |
+| S1 | Search input | Type "Python developer" + Enter | tRPC query fires. Results or empty state shown. No crash. |
+| S2 | Location autocomplete | Type "SW1A" in location field | Postcode suggestions appear within 200ms. Selecting one populates lat/lng. |
+| S3 | Radius selector | Select each option (5/10/25/50/100) | URL updates with `radius=` param. Search re-fires. |
+| S4 | Job cards render | Search returns results | Each card shows: title, company, salary badge, location, work type, skills (max 5). |
+| S5 | Salary badge variants | Check cards with real/predicted/missing salary | Green badge for real, amber for predicted with "est." label, grey for missing. |
+| S6 | Skills pills | Check card with skills | Skills display as badges. Max 5 shown. "+N more" for overflow. ESCO links on detail page. |
+| S7 | Filter sidebar (desktop) | Load search page at > 1024px | Sidebar renders with all 6 filter groups. Counts match `mv_search_facets`. |
+| S8 | Filter sidebar (mobile) | Load search page at < 640px | "Filters" button with count badge. Drawer opens with Apply/Reset. |
+| S9 | Salary range slider | Interact with slider | `role="slider"` present. `aria-valuemin`, `aria-valuemax`, `aria-valuenow` update. Keyboard arrows work. |
+| S10 | URL state sync | Apply filters, copy URL, paste in new tab | Same filters applied. Results match. |
+| S11 | Empty state | Search for nonsense query | "No jobs match your search" message. Suggestions to broaden filters. |
+| S12 | Pagination | Search with > 20 results | Page 1 shows 20 results. "Next" navigates to page 2. URL updates with `page=2`. |
+| S13 | Job detail page | Click a job card | Job detail page loads with all 10 sections from PLAYBOOK.md §2.5. |
+| S14 | Company info | Check job with enriched company | SIC industry label, company status, creation date displayed. |
+| S15 | Match explanation | Load job detail for top search result | Explanation streams via AI SDK. AIDisclosure badge visible. |
+| S16 | Related jobs | Scroll to bottom of job detail | 5 related jobs shown as compact cards. Clicking navigates to detail. |
+| S17 | Apply button | Click "Apply" on job detail | Opens `source_url` in new tab. `rel="noopener noreferrer"` set. PostHog click event logged. |
+| S18 | Skeleton loading | Throttle network to Slow 3G, search | Skeleton cards visible during loading. No layout shift when results appear. |
+| S19 | JSON-LD | View page source on job detail | Valid `application/ld+json` script tag. All required JobPosting fields present. |
+| S20 | Meta tags | Check `<head>` on job detail | `<title>`, `<meta description>`, OG tags populated with job data. |
+| S21 | tRPC search.query | Run 5 test queries from §2 | All return typed results. No 500 errors. Latency < 3s. |
+| S22 | tRPC search.related | Call with valid job ID | Returns 5 results with similarity ordering. |
+| S23 | tRPC facets.counts | Call procedure | Returns 4 facet types with counts. |
+| S24 | Audit log: search | Perform a search, check `ai_decision_audit_log` | Row created with `decision_type='search_ranking'`. |
+| S25 | Audit log: explanation | View job detail, check audit log | Row created with `decision_type='match_explanation'`, `token_count` populated. |
+| S26 | Coverage: web | `pnpm test --coverage` | ≥ 60% line coverage. |
+| S27 | OpenAI spending cap | Check OpenAI dashboard → Settings → Limits | Monthly budget set to $50/month. |
+| S28 | Budget guard fallback | Set `MONTHLY_SOFT_CAP_USD = 0` temporarily, call `/api/explain` | Returns fallback text instead of calling LLM. Reset cap after test. |
 
-**FAIL gate:** R1–R10, R14, R16 are hard failures. R11–R13, R15, R17–R18 are soft.
+**FAIL gate:** S1–S6, S10, S13, S15, S19, S21–S25, S27–S28 are hard failures. S7–S9, S11–S12, S14, S16–S18, S20, S26 are soft.
+
+### 1.3 Gate 3: Performance and Caching (Week 11)
+
+Run these checks before completing Stage 3 (Performance) on `display-phase`.
+
+| # | Check | Command | Pass criteria |
+|---|---|---|---|
+| P1 | ISR: job detail | Load `/jobs/[id]` twice. Check response headers. | Second load serves from cache (cache HIT header). |
+| P2 | ISR: revalidation | Load cached job detail page. Wait 31 minutes. Load again. | Stale page served immediately. Background revalidation fires. Next load has fresh content. |
+| P3 | ISR: homepage | Load `/` twice | Second load from cache. Revalidates after 1 hour. |
+| P4 | Search is dynamic | Load `/search?q=test` twice with different DB data | Both responses reflect current DB state. NOT cached. |
+| P5 | HNSW index scan | `EXPLAIN ANALYZE` on `search_jobs_v2(query_text := 'developer', query_embedding := ...)` | Plan shows "Index Scan using idx_jobs_embedding". NOT "Seq Scan". |
+| P6 | Search P95 latency | Run 50 searches, measure P95 | `search_jobs_v2()` P95 < 80ms. |
+| P7 | Full search latency | Time: embed query + search_jobs_v2 + rerank + explanation | Total < 3 seconds including streaming explanation start. |
+| P8 | PgBouncer active | Check Supabase connection pooler dashboard | Transaction mode active. Connection count stable. |
+| P9 | FCP on 3G | Lighthouse with simulated Slow 3G on homepage | First Contentful Paint < 1.8s. |
+| P10 | Lighthouse: Performance | Run Lighthouse on homepage, search, job detail | All pages ≥ 90 Performance score. |
+| P11 | Lighthouse: Accessibility | Run Lighthouse on all pages | All pages ≥ 95 Accessibility score. |
+| P12 | CLS | Check Lighthouse on all pages | Cumulative Layout Shift < 0.1 on all pages. |
+| P13 | Bundle size | Check `next build` output | Main JS bundle < 200KB gzipped. |
+| P14 | Worker bundle | Check OpenNext output | Worker bundle < 3 MiB. |
+| P15 | TTFB | Load job detail page from different region | TTFB < 200ms (Cloudflare edge cache). |
+
+**FAIL gate:** P1, P4–P6, P10–P11, P14 are hard failures. P2–P3, P7–P9, P12–P13, P15 are soft.
+
+### 1.4 Gate 4: Compliance and Launch (Week 12)
+
+Run these checks before squash-merging `display-phase` → `main`.
+
+| # | Check | Command | Pass criteria |
+|---|---|---|---|
+| L1 | Transparency page | Load `/transparency` | All 7 sections from SPEC.md §9.4 present. Plain English. No jargon. |
+| L2 | AI Disclosure: search | Perform a search | "Results ranked by AI" disclosure visible. |
+| L3 | AI Disclosure: explanation | View job detail with explanation | "AI-generated" badge visible next to explanation. |
+| L4 | AI Disclosure: predicted salary | View job with predicted salary | "est." label with tooltip explaining prediction. |
+| L5 | Audit log completeness | Perform 10 searches + view 5 job details | `ai_decision_audit_log` contains ≥ 15 rows with correct `decision_type` values. |
+| L6 | Audit log: monthly review | Run review query from PLAYBOOK.md §4.6 | Returns aggregated stats by decision type. |
+| L7 | axe-core: homepage | Run `@axe-core/playwright` on `/` | Zero critical or serious violations. |
+| L8 | axe-core: search | Run on `/search?q=developer` | Zero critical or serious violations. |
+| L9 | axe-core: job detail | Run on `/jobs/[id]` | Zero critical or serious violations. |
+| L10 | axe-core: transparency | Run on `/transparency` | Zero critical or serious violations. |
+| L11 | Skip link | Tab on any page | "Skip to main content" link visible on first Tab. Clicking it jumps past header. |
+| L12 | Keyboard: search | Tab through search flow | All inputs, buttons, filters keyboard-accessible. No focus traps. |
+| L13 | Keyboard: job detail | Tab through job detail | All links, buttons, skills pills keyboard-accessible. |
+| L14 | Colour contrast | Lighthouse accessibility audit | All text meets 4.5:1 contrast ratio (AA). |
+| L15 | Touch targets | Inspect mobile viewport | All interactive elements ≥ 48×48px. Minimum 8px spacing. |
+| L16 | Reduced motion | Set `prefers-reduced-motion: reduce` | Skeleton animations disabled. No moving elements. |
+| L17 | Font size | Check body text on mobile | Minimum 16px. No text smaller than 14px anywhere. |
+| L18 | JSON-LD valid | Paste job detail JSON-LD into schema.org validator | Zero errors. All required JobPosting fields present. |
+| L19 | Sitemap | Load `/sitemap.xml` | Valid XML. Contains job URLs. < 50K URLs. |
+| L20 | Robots.txt | Load `/robots.txt` | Allows `/`. Disallows `/api/` and `/profile/`. Contains sitemap URL. |
+| L21 | OG tags | Paste job URL into Facebook Sharing Debugger | Title, description, image preview render correctly. |
+| L22 | Mobile: homepage | Load on iPhone SE viewport (375×667) | Single column layout. No horizontal scroll. All text readable. |
+| L23 | Mobile: search | Perform search on mobile viewport | Cards full-width. Filter drawer works. |
+| L24 | Mobile: job detail | Load job detail on mobile | All sections stack correctly. Apply button easily tappable. |
+| L25 | Mobile: sticky search | Scroll down on search results | Search bar stays fixed at top. |
+
+**FAIL gate:** L1–L6 (compliance) and L7–L10 (accessibility) are hard failures. L11–L25 are soft but expected to pass.
 
 ---
 
 ## 2. Test Search Queries
 
-These 15 queries verify the full Phase 2 search pipeline: search_jobs_v2() → cross-encoder re-ranking.
+These 10 queries verify the full Phase 3 search pipeline end-to-end: browser → tRPC → Modal → search_jobs_v2 → re-rank → render.
 
 ### Query Reference
 
-| # | Description | Parameters | Expected behaviour |
+| # | Query | Filters | Expected behaviour |
 |---|---|---|---|
-| Q1 | Basic keyword + semantic | `query_text='Python developer'`, `query_embedding`, London coords | RRF returns candidates. Cross-encoder re-ranks. Top results are Python/software jobs in London. |
-| Q2 | Skill filter | `skill_filters=['Python', 'AWS']` | Only jobs with Python or AWS in job_skills returned. |
-| Q3 | Category filter | `query_text='analyst'`, `category_filter='Finance'` | Only finance analyst jobs. Not data analysts in tech. |
-| Q4 | Exclude duplicates | `query_text='nurse'`, `exclude_duplicates=true` vs `false` | True: fewer results, no duplicates. False: includes duplicates. |
-| Q5 | Predicted salary filter | `query_text='marketing manager'`, `min_salary=40000` | Jobs without real salary but with `salary_predicted_max >= 40000` included. |
-| Q6 | Max salary filter | `query_text='graduate'`, `max_salary=30000` | Only entry-level/graduate jobs within salary range. |
-| Q7 | Remote + skill | `query_text='DevOps'`, `include_remote=true`, `skill_filters=['Docker', 'Kubernetes']` | Remote DevOps jobs with container skills. |
-| Q8 | Re-ranking verification | `query_text='senior data scientist machine learning'` | Cross-encoder should boost jobs mentioning ML/data science over generic "senior" roles. |
-| Q9 | UK cert search | `query_text='CIPD qualified HR manager'` | Top results are HR manager jobs. Jobs with CIPD in job_skills rank higher. |
-| Q10 | User profile search | Profile: "Python developer, Manchester, remote", `query_text='developer'` | Manchester + remote + Python jobs rank higher. |
-| Q11 | Empty query + filters | No text, `category_filter='Healthcare'`, `min_salary=30000` | Returns healthcare jobs above £30K. No crash. |
-| Q12 | Typo resilience | `query_text='softwar engeneer'` | FTS may fail but semantic catches intent. Some relevant results returned. |
-| Q13 | UK-specific cert | `query_text='SIA door supervisor'` | Returns security jobs requiring SIA licence. |
-| Q14 | All filters | `query_text='accountant'`, `query_embedding`, Edinburgh coords, `radius_miles=50`, `min_salary=50000`, `category_filter='Finance'`, `exclude_duplicates=true` | Finance accountant jobs near Edinburgh, ≥£50K, no duplicates. |
-| Q15 | Graceful degradation | Same as Q1, but with cross-encoder mocked to fail | Returns RRF results directly. No re-ranking. No error. |
+| Q1 | "Python developer" | Location: London (51.5074, -0.1278), radius: 25mi | Job cards appear with Python/software jobs in London. Top 5 have AI explanations. |
+| Q2 | "nurse" | Work type: Remote | Remote nursing jobs shown. No onsite jobs. Filter sidebar reflects active filter. |
+| Q3 | "accountant" | Category: Finance, min salary: £40K | Finance accountant jobs ≥£40K. Salary badges show green (real) or amber (predicted). |
+| Q4 | "data analyst Manchester" | Location: Manchester (53.4808, -2.2426) | Data/analytics jobs near Manchester. Skills pills show relevant skills (SQL, Python, etc.). |
+| Q5 | "junior marketing" | Seniority: Junior, date: Last 7 days | Recent junior marketing roles. Seniority badge visible on cards. |
+| Q6 | "chef" | No filters | Chef/hospitality jobs from all locations. Pagination if > 20 results. |
+| Q7 | "AWS cloud engineer" | Skills: AWS (if skill filter available) | Cloud/DevOps jobs mentioning AWS. Skills pills highlight AWS. |
+| Q8 | "" (empty query) | Category: Healthcare | Healthcare jobs listed. No crash from empty query. |
+| Q9 | "softwar engeneer" (typo) | None | Semantic search catches intent despite typo. Some relevant software engineering results returned. |
+| Q10 | "CIPD qualified HR manager" | None | HR jobs shown. Match explanations mention CIPD relevance. |
 
-### Test Execution (Python)
+### Execution Method
 
-```python
-# tests/test_search_quality.py
-import pytest
-from pipeline.src.search.orchestrator import search
+For each query:
 
-@pytest.mark.parametrize("query,filters,expected_min_results", [
-    ("Python developer", {"search_lat": 51.5074, "search_lng": -0.1278}, 5),
-    ("nurse", {"include_remote": True}, 3),
-    ("SIA door supervisor", {}, 1),
-    ("accountant", {"min_salary": 50000, "category_filter": "Finance"}, 1),
-])
-async def test_search_returns_results(query, filters, expected_min_results):
-    result = await search(query=query, user_id=None, filters=filters)
-    assert len(result["results"]) >= expected_min_results
-    assert all("title" in r for r in result["results"])
-    assert result["latency_ms"] < 3000
-```
-
-### Parameter Coverage Matrix
-
-| Parameter | Exercised in queries |
-|---|---|
-| `query_text` | Q1–Q10, Q12–Q14 |
-| `query_embedding` | Q1, Q8, Q10, Q14 |
-| `search_lat` / `search_lng` | Q1, Q14 |
-| `skill_filters` | Q2, Q7 |
-| `category_filter` | Q3, Q11, Q14 |
-| `exclude_duplicates` | Q4, Q14 |
-| `min_salary` / `max_salary` | Q5, Q6, Q11, Q14 |
-| `include_remote` | Q7 |
-| User profile | Q10 |
-| Graceful degradation | Q15 |
-| Null parameters | Q11 (no text) |
+1. Enter query in search bar on the live site
+2. Apply specified filters
+3. Verify: results appear (or sensible empty state), cards render correctly, URL updates
+4. Click first result → verify job detail page loads completely
+5. Check match explanation streams within 3 seconds
+6. Check AI disclosure badge visible
 
 ---
 
 ## 3. Go/No-Go Production Checklist
 
-Every item must pass before deploying Phase 2 to production. Execute in order.
+Every item must pass before declaring Phase 3 complete. Execute in order.
 
 ### 3.1 Pre-Deployment (Local Verification)
 
-| # | Check | Command / SQL | Pass criteria |
+| # | Check | Command / Action | Pass criteria |
 |---|---|---|---|
-| G1 | Full migration chain (001–010) | `supabase db reset` | Zero errors. All 10 migrations applied. |
-| G2 | All rollbacks work (010–007) | Run each `down.sql` in reverse, then `supabase db reset` | Each down.sql succeeds. Full chain re-applies cleanly. |
-| G3 | Phase 1 search preserved | `SELECT * FROM search_jobs(query_text := 'developer')` | Still returns results. Phase 1 function not broken. |
-| G4 | Phase 2 search works | `SELECT * FROM search_jobs_v2(query_text := 'developer', exclude_duplicates := true)` | Returns results with 18 columns. |
-| G5 | Pipeline test coverage | `uv run pytest --cov=src --cov-fail-under=80` | ≥ 80% line coverage. 0 test failures. |
-| G6 | Linting + type checks | `uv run ruff check . && uv run mypy src/` | Zero errors on both. |
-| G7 | Skills populated | `SELECT count(*) FROM job_skills` | > 0. |
-| G8 | Dedup run | `SELECT count(*) FROM jobs WHERE is_duplicate = TRUE` | > 0. |
-| G9 | Salary model trained | Salary model file exists on Modal volume | Model loads and predicts without error. |
-| G10 | Companies enriched | `SELECT count(*) FROM companies WHERE enriched_at IS NOT NULL` | > 0. |
-| G11 | Cross-encoder functional | Test rerank on 10 queries locally | Returns re-ranked results in < 2 seconds. |
-| G12 | RLS: user_profiles | Query as anon: `SELECT * FROM user_profiles` | Returns 0 rows. |
-| G13 | Performance baseline | `EXPLAIN ANALYZE SELECT * FROM search_jobs_v2(query_text := 'developer')` | P95 < 80ms for DB query. Total pipeline < 3s. |
+| G1 | Full migration chain (001–012) | `supabase db reset` | Zero errors. All 12 migrations applied. |
+| G2 | Phase 1+2 functions preserved | `SELECT * FROM search_jobs(query_text := 'developer')` | Returns results. Not broken by Phase 3 migrations. |
+| G3 | search_jobs_v2 preserved | `SELECT * FROM search_jobs_v2(query_text := 'developer')` | Returns 18-column results. All Phase 2 filters work. |
+| G4 | Materialized views populated | `SELECT COUNT(*) FROM mv_search_facets` | > 0 rows. |
+| G5 | Audit log writable | `INSERT INTO ai_decision_audit_log(...)` via service_role | Row created. Anon role cannot read. |
+| G6 | TypeScript compiles | `pnpm typecheck` | Zero errors. |
+| G7 | All tests pass | `pnpm test` | Zero failures. ≥ 60% coverage. |
+| G8 | Lint clean | `pnpm lint` | Zero errors. |
+| G9 | Build succeeds | `pnpm build` | Zero errors. |
+| G10 | Bundle check | Check build output | Main JS < 200KB gzipped. Worker bundle < 3 MiB. |
+| G11 | Lighthouse: Performance | Run on all 3 key pages | All ≥ 90. |
+| G12 | Lighthouse: Accessibility | Run on all 3 key pages | All ≥ 95. |
+| G13 | axe-core audit | Run Playwright accessibility tests | Zero critical/serious violations across all pages. |
+| G14 | 10 test queries | Execute all 10 from §2 | All return results or handle gracefully. Zero errors. |
+| G15 | E2E: search flow | Playwright: type query → filter → click result → see detail → apply | Full flow completes without error. |
+| G16 | E2E: mobile flow | Same flow on mobile viewport | Drawer filters work. Touch targets adequate. |
+| G17 | JSON-LD valid | schema.org validator | Zero errors on 3 sample job pages. |
+| G18 | Sitemap valid | Load `/sitemap.xml` | Well-formed XML. Contains job URLs. |
+| G19 | robots.txt correct | Load `/robots.txt` | Correct allow/disallow rules. |
+| G20 | Transparency page | Load `/transparency` | All 7 sections present and readable. |
+| G21 | AI disclosures visible | Navigate through site | AI disclosure on: search rankings, explanations, predicted salaries. |
 
 ### 3.2 Production Deployment
 
-| # | Step | Command | Verification |
+| # | Check | Action | Pass criteria |
 |---|---|---|---|
-| G14 | Push migrations | `supabase db push` | No errors. New tables/functions exist. |
-| G15 | Deploy Modal | `modal deploy pipeline/src/modal_app.py` | All cron functions + search endpoint visible. |
-| G16 | Update secrets | `modal secret update atoz-env` with new keys | `COMPANIES_HOUSE_API_KEY` present. |
-| G17 | Seed ESCO | `modal run src/modal_app.py::seed_esco` | `esco_skills` table has ≥ 13,000 rows. |
-| G18 | Backfill skills | `modal run src/modal_app.py::backfill_job_skills` | `job_skills` rows created for existing ready jobs. |
-| G19 | Run dedup | `modal run src/modal_app.py::backfill_dedup` | Duplicates flagged. `is_duplicate = TRUE` count > 0. |
-| G20 | Train salary model | `modal run src/modal_app.py::train_salary_model` | Model trained. MAE logged. |
-| G21 | Enrich companies | `modal run src/modal_app.py::enrich_companies` | Companies enriched with SIC codes. |
-| G22 | Predict salaries | `modal run src/modal_app.py::predict_salaries` | Missing salaries filled. `salary_predicted_max` count > 0. |
-| G23 | Search endpoint live | `curl -X POST https://<modal-url>/search -d '{"query":"developer"}'` | Returns JSON results with latency < 3s. |
+| G22 | Migrations applied | `supabase db push` | Zero errors. |
+| G23 | CF Pages deployed | `wrangler pages deploy` | Site accessible at production URL. |
+| G24 | Custom domain | Load `https://atozjobs.ai` | Resolves. SSL valid. Homepage loads. |
+| G25 | Env vars verified | Check CF dashboard | All env vars from SPEC.md §5.2 set. |
+| G26 | Modal endpoint reachable | Search from production site | Results returned (Modal `/search` responds). |
+| G27 | Sentry active | Trigger test error | Error appears in Sentry production project. |
+| G28 | PostHog active | Load production site | Page view event in PostHog. |
 
-### 3.3 Post-Deployment Monitoring (First 24 Hours)
+### 3.3 Post-Deployment Verification
 
-| # | Alert condition | Threshold | Action |
+| # | Check | Action | Pass criteria |
 |---|---|---|---|
-| G24 | Cross-encoder latency | P95 > 2 seconds per search | Check Modal container warmth. Check model loading time. Consider pre-warming. |
-| G25 | Dedup false positives | User reports (or manual check) shows non-duplicates flagged | Raise composite threshold from 0.65 to 0.70. Review title similarity threshold. |
-| G26 | Salary prediction outliers | Predicted salary < £15K or > £300K | Check feature engineering. Check model version. Retrain if needed. |
-| G27 | Companies House 429s | > 10 rate limit errors in 1 hour | Reduce request rate. Check if concurrent jobs running. |
-| G28 | Skills extraction failures | > 5% of new jobs fail skill extraction | Check SpaCy model availability. Check Modal image. |
-| G29 | MV refresh failures | `SELECT * FROM cron.job WHERE jobname LIKE 'refresh%'` shows failed | Check pg_cron logs. Run manual `REFRESH MATERIALIZED VIEW CONCURRENTLY`. |
-| G30 | Phase 1 pipeline health | `SELECT * FROM pipeline_health` | All Phase 1 metrics still healthy. No regression. |
+| G29 | Search works | Type "developer" on production site | Results appear within 3 seconds. |
+| G30 | ISR active | Load job detail page twice | Cache HIT on second load. |
+| G31 | Explanations stream | View top result detail | AI explanation streams within 3 seconds. |
+| G32 | Audit logging | Check `ai_decision_audit_log` table | Rows appearing for production searches. |
+| G33 | Mobile works | Load on real mobile device | Full flow: search → filter → detail → apply. |
+| G34 | SEO indexable | `curl -I https://atozjobs.ai` | Returns 200. No `X-Robots-Tag: noindex`. |
 
-**Decision point:** If G24–G30 are all clear after 24 hours, Phase 2 is **production-stable**. Tag `v0.2.0` and begin Phase 3 planning.
+### 3.4 24-Hour Monitoring
+
+| # | Metric | Check | Pass criteria |
+|---|---|---|---|
+| G35 | Error rate | Sentry | < 1% of page loads produce errors. |
+| G36 | Search latency | PostHog + Sentry Performance | P95 total search (including render) < 5 seconds. |
+| G37 | ISR cache hits | Cloudflare Analytics | > 50% cache hit rate on job detail pages. |
+| G38 | Audit log volume | `SELECT COUNT(*) FROM ai_decision_audit_log WHERE created_at > now() - interval '24 hours'` | Rows growing. No gaps > 1 hour. |
+| G39 | Worker errors | Cloudflare Pages dashboard | Zero worker exceptions. |
+| G40 | LLM cost | Helicone dashboard | < $1 in first 24 hours (proportional to traffic). |
 
 ---
 
 ## 4. Rollback Procedures
 
-### 4.1 Migration Rollback
+### 4.1 Code Rollback
 
 | Scenario | Recovery | Estimated RTO |
 |---|---|---|
-| Bad migration (pre-production) | Run `down.sql` for failed migration. Fix. Re-apply. `supabase db reset` must pass. | < 15 min |
-| Bad migration (production) | `supabase db push` the corrected migration. If irreversible, PITR restore. | < 30 min |
-| Phase 2 migration breaks Phase 1 | Roll back all Phase 2 migrations (010, 009, 008, 007 down.sql in order). Phase 1 functions still work. | < 30 min |
+| Bad deployment (site broken) | `wrangler pages deploy --branch=<previous>` or rollback in CF dashboard. | < 5 min |
+| tRPC error (specific route fails) | Fix code, redeploy. If urgent: disable route with environment flag. | < 15 min |
+| AI SDK streaming broken | Disable explanation streaming (return static fallback text). Redeploy. | < 15 min |
+| OpenNext adapter incompatibility | Switch deployment target to Netlify Free. `netlify deploy`. | < 30 min |
 
-### 4.2 Component Rollback
+### 4.2 Database Rollback
 
 | Scenario | Recovery | Estimated RTO |
 |---|---|---|
-| SpaCy model corrupt/missing | Re-download `en_core_web_sm` in Modal image. Fall back to Phase 1 regex matcher. | < 30 min |
-| XGBoost model corrupt | Retrain from scratch (`modal run train_salary_model`). Set `salary_predicted_*` to NULL for affected jobs. | < 1 hour |
-| Cross-encoder unavailable | Graceful degradation built in: search returns RRF results without re-ranking. | 0 (automatic) |
-| Companies House API down | Enrichment paused. No impact on search. Resume when API recovers. | 0 (wait) |
-| Dedup false positives (bad batch) | `UPDATE jobs SET is_duplicate = FALSE, canonical_id = NULL WHERE duplicate_score < 0.70` | < 15 min |
+| Migration 012 breaks queries | Run `down.sql` for 012. Facets sidebar shows empty. Site still works. | < 5 min |
+| Migration 011 issue | Run `down.sql` for 011. Audit logging stops. Site still works (just not logging). | < 5 min |
+| Phase 3 migrations corrupt Phase 1+2 | Restore from Supabase PITR. Point-in-time to before migration push. | < 4 hours |
 
-### 4.3 Full Phase 2 Rollback
+### 4.3 Infrastructure Rollback
 
-If Phase 2 causes unrecoverable issues:
-
-```bash
-# 1. Disable Phase 2 cron jobs
-SELECT cron.unschedule('refresh-skill-demand');
-SELECT cron.unschedule('refresh-skill-cooccurrence');
-
-# 2. Switch search back to Phase 1 function
-# (search_jobs() still exists, unchanged)
-
-# 3. Roll back migrations in reverse order
-psql $DATABASE_URL < supabase/migrations/010_user_profiles_search_v2/down.sql
-psql $DATABASE_URL < supabase/migrations/009_salary_company/down.sql
-psql $DATABASE_URL < supabase/migrations/008_advanced_dedup/down.sql
-psql $DATABASE_URL < supabase/migrations/007_skills_taxonomy/down.sql
-
-# 4. Re-deploy Phase 1 Modal image
-git checkout v0.1.0 -- pipeline/src/modal_app.py
-cd pipeline && modal deploy src/modal_app.py
-
-# 5. Verify Phase 1 still works
-SELECT * FROM search_jobs(query_text := 'developer');
-SELECT * FROM pipeline_health;
-```
-
-**RTO for full rollback: < 1 hour.** Zero data loss — Phase 1 data and functions are untouched.
+| Scenario | Recovery | Estimated RTO |
+|---|---|---|
+| Cloudflare Pages outage | Deploy to Netlify Free. Point DNS CNAME to Netlify. | < 1 hour |
+| Modal endpoint down | Search falls back to search_jobs_v2 without re-ranking (call DB directly from tRPC). No explanations. | < 15 min |
+| Supabase outage | Site shows cached ISR pages. Search returns "Service temporarily unavailable." No data loss. | 0 (wait for recovery) |
+| LLM provider (OpenAI) down | Explanations show fallback text. Search and ranking still work (don't depend on OpenAI). | 0 (automatic) |
 
 ---
 
 ## 5. Performance SLAs
 
-These targets apply from the moment Phase 2 reaches production.
+These targets apply from the moment Phase 3 reaches production.
 
-| # | Metric | Target | Alert threshold | How to measure | When to act |
+| # | Metric | Target | Alert | How to measure | When to act |
 |---|---|---|---|---|---|
-| S1 | `search_jobs_v2()` P95 | < 80ms | > 150ms | `EXPLAIN ANALYZE` + `pg_stat_statements` | Check indexes. Check duplicate exclusion performance. Run `VACUUM ANALYZE`. |
-| S2 | Cross-encoder re-rank (50 pairs) | < 500ms | > 1000ms | structlog timing in Modal | Check model loading. Check CPU allocation. Consider reducing to top 30. |
-| S3 | Full search pipeline (query → results) | < 3s | > 5s | End-to-end timing in search orchestrator | Check each stage independently. Check cross-encoder latency. |
-| S4 | Skill extraction throughput | ≥ 5,000 jobs/min | < 2,000 jobs/min | structlog timing in Modal | Check SpaCy model. Check Modal cold starts. |
-| S5 | Dedup scan (new jobs daily) | < 30 min for 5K jobs | > 1 hour | Modal function duration | Check pg_trgm index health. Reduce candidate window. |
-| S6 | Companies House enrichment | ≤ 2 req/sec sustained | > 5 429 errors/hour | structlog timing | Reduce request rate. Add jitter. |
-| S7 | Salary model training | < 10 min on 100K jobs | > 30 min | Modal function duration | Check feature count. Reduce XGBoost rounds. |
-| S8 | MV refresh (daily) | < 5 min each | > 15 min | pg_cron job duration | Check table sizes. Add more indexes on job_skills. |
-| S9 | User profile embedding | < 2s per profile update | > 5s | API response timing | Check Gemini API status. Pre-compute templates. |
+| S1 | `search_jobs_v2()` P95 | < 80ms | > 150ms | `pg_stat_statements` | Check HNSW index. Run `VACUUM ANALYZE`. Tune `hnsw.ef_search`. |
+| S2 | Full search (embed + DB + rerank) | < 2s | > 3s | Sentry performance tracing | Check Modal cold start. Check network latency to Supabase. |
+| S3 | Page TTFB | < 200ms | > 500ms | Cloudflare Web Analytics | Check ISR cache. Verify edge caching. |
+| S4 | Job detail FCP | < 1.2s | > 2.0s | Lighthouse CI | Check bundle size. Optimize component loading. |
+| S5 | Lighthouse Performance | ≥ 90 | < 80 | CI/CD Lighthouse audit | Identify and fix performance regressions. |
+| S6 | Lighthouse Accessibility | ≥ 95 | < 90 | CI/CD Lighthouse audit | Run axe-core. Fix new violations. |
+| S7 | ISR cache hit rate | > 50% | < 30% | Cloudflare Analytics | Check revalidation times. Pre-generate more static paths. |
+| S8 | LLM cost per month | < $5 | > $10 | Helicone dashboard | Reduce explanation length. Increase caching. Limit to top 3 results. |
+| S9 | CLS | < 0.1 | > 0.25 | Lighthouse | Add explicit dimensions to dynamic content areas. |
+| S10 | Worker bundle size | < 3 MiB | > 2.5 MiB | OpenNext build output | Dynamic import heavy components. Remove unused dependencies. |
 
 ---
 
-## 6. Error Taxonomy (Phase 2 Additions)
+## 6. Error Taxonomy
 
-| Error type | Retry? | Max retries | Backoff | Gate impact |
-|---|---|---|---|---|
-| `SkillExtractionError` | Yes | 2 | 1s fixed | SpaCy model issue. Retry, then fall back to Phase 1 regex matcher. |
-| `FuzzyDedupError` | Yes | 2 | 2^n seconds | pg_trgm query issue. Retry. Skip job if persistent. |
-| `MinHashError` | No | 0 | N/A | Data issue. Skip MinHash for this job. Log for investigation. |
-| `SalaryPredictionError` | No | 0 | N/A | Model issue. Leave salary unpredicted. Retrain model. |
-| `CompaniesHouseRateLimitError` | Yes | 3 | `Retry-After` or 60s | Back off. Resume in next batch. |
-| `CompaniesHouseNotFoundError` | No | 0 | N/A | Company not in CH. Set `enriched_at` to prevent re-querying. |
-| `CrossEncoderError` | No | 0 | N/A | Return RRF results without re-ranking. Graceful degradation. |
-| `ProfileEmbeddingError` | Yes | 2 | 2^n seconds | Gemini API issue. Retry, then return search without profile personalization. |
+For debugging failures caught by gate checks.
+
+| Error type | Retry? | Impact | Recovery |
+|---|---|---|---|
+| `tRPCError` (400/500) | Depends | Search broken | Check server logs. Fix Zod schema or handler. |
+| `SupabaseError` | Check | DB query failed | Check connection string, RLS policies, table exists. |
+| `ModalEndpointError` | Yes | No re-ranking | Return search_jobs_v2 results directly (graceful degradation). |
+| `OpenAIError` | Yes | No explanations | Show fallback text. Log for monitoring. |
+| `PostcodesIOError` | Yes | No location autocomplete | User can manually enter postcode. Search still works. |
+| `CloudflareBuildError` | No | Deploy blocked | Check bundle size, OpenNext compatibility. |
+| `ISRRevalidationError` | Auto | Stale content served | Cloudflare retries automatically. Check Supabase connection. |
+| `AxeCoreViolation` | No | Accessibility failure | Fix component. Must resolve before merge. |
+| `LighthouseRegression` | No | Performance degraded | Identify cause. Optimize before merge. |
 
 ---
 
-## 7. Phase 2 Completion Criteria
+## 7. Phase 3 Completion Criteria
 
-Phase 2 is **complete** when ALL of the following are true:
+Phase 3 is **complete** when ALL of the following are true:
 
-- [ ] All 16 Gate 1 (Skills) checks pass
-- [ ] All 16 Gate 2 (Dedup) checks pass
-- [ ] All 18 Gate 3 (Salary & Enrichment) checks pass
-- [ ] All 18 Gate 4 (Re-ranking) checks pass
-- [ ] All 15 test search queries execute without error
-- [ ] All 23 go/no-go items (G1–G23) pass
-- [ ] 24-hour monitoring (G24–G30) shows no critical alerts
-- [ ] All 9 performance SLAs meet target thresholds
-- [ ] Git tag `v0.2.0` applied to `main` branch
-- [ ] `STATUS.md` updated with Phase 2 completion date and metrics
-- [ ] CLAUDE.md updated with Phase 2 additions
+- [ ] All 21 Gate 1 (Foundation) checks pass
+- [ ] All 28 Gate 2 (Search) checks pass
+- [ ] All 15 Gate 3 (Performance) checks pass
+- [ ] All 25 Gate 4 (Compliance) checks pass
+- [ ] All 10 test search queries execute correctly on production
+- [ ] All 40 go/no-go items (G1–G40) pass
+- [ ] All 10 performance SLAs meet target thresholds
+- [ ] Git tag `v0.3.0` applied to `main` branch
+- [ ] `STATUS.md` updated with Phase 3 completion date and metrics
+- [ ] `CLAUDE.md` updated with Phase 3 additions
 
-**Total verification items: 68 gate checks + 15 queries + 30 go/no-go items + 9 SLAs = 122 verifiable items.**
+**Total verification items: 89 gate checks + 10 queries + 40 go/no-go items + 10 SLAs = 149 verifiable items.**
 
-When all 122 items pass: **Phase 2 is production-stable. Begin Phase 3 (Display) planning.**
+When all 149 items pass: **Phase 3 is production-stable. AtoZ Jobs AI is live.**
