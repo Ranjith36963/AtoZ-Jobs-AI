@@ -9,6 +9,7 @@ dependencies = [
     "structlog>=24.0",
     "numpy>=1.26",
     "supabase>=2.0",
+    "postgrest>=0.19",
     "beautifulsoup4>=4.12",
     "modal>=0.68",
     "spacy>=3.7",
