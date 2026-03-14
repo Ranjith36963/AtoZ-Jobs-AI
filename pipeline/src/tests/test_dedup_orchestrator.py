@@ -15,6 +15,7 @@ from src.dedup.orchestrator import _simple_similarity, run_advanced_dedup
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_db_mock(jobs: list[dict[str, object]]) -> MagicMock:
     """Create a mock Supabase client returning the given jobs."""
     db = MagicMock()
@@ -300,8 +301,16 @@ class TestMinHashStage:
     @pytest.mark.asyncio
     async def test_minhash_candidates_counted(self) -> None:
         """LSH candidates are counted in stats."""
-        job_a = _make_job("job-a", title="Python Developer", description="Build Python apps for cloud platform.")
-        job_b = _make_job("job-b", title="Python Developer", description="Build Python apps for cloud services.")
+        job_a = _make_job(
+            "job-a",
+            title="Python Developer",
+            description="Build Python apps for cloud platform.",
+        )
+        job_b = _make_job(
+            "job-b",
+            title="Python Developer",
+            description="Build Python apps for cloud services.",
+        )
         db = _make_db_mock([job_a, job_b])
 
         with (

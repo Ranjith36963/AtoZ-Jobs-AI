@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from src.profiles.handler import get_profile_embedding
 from src.search.reranker import rerank
 
 if TYPE_CHECKING:
@@ -29,13 +30,13 @@ async def search(
     user_id: str | None = None,
     filters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Execute full search pipeline: embed -> RRF -> rerank.
+    """Execute full search pipeline: embed -> RRF -> rerank -> personalize.
 
     Args:
         query: User search text.
         db_client: Supabase client.
         embed_fn: Async function to embed text -> list[float].
-        user_id: Optional UUID for personalization.
+        user_id: Optional UUID for personalization via profile embedding.
         filters: Search filter parameters.
 
     Returns:
@@ -51,6 +52,14 @@ async def search(
             query_embedding = await embed_fn(query)
         except Exception:
             logger.exception("search.embed_failed")
+
+    # 1b. Fetch user profile embedding for personalization boost
+    profile_embedding: list[float] | None = None
+    if user_id:
+        try:
+            profile_embedding = await get_profile_embedding(user_id, db_client)
+        except Exception:
+            logger.warning("search.profile_fetch_failed", user_id=user_id)
 
     # 2. Call search_jobs_v2 via RPC
     rpc_params: dict[str, Any] = {
@@ -70,7 +79,7 @@ async def search(
     }
 
     rpc_result = db_client.rpc("search_jobs_v2", rpc_params).execute()
-    search_results = rpc_result.data or []
+    search_results: list[dict[str, Any]] = list(rpc_result.data or [])  # type: ignore[arg-type]
     total = len(search_results)
 
     # 3. Cross-encoder rerank (graceful degradation)
@@ -85,6 +94,15 @@ async def search(
     else:
         search_results = search_results[:20]
 
+    # 4. Profile-based personalization boost (optional)
+    has_personalization = False
+    if profile_embedding and search_results:
+        try:
+            search_results = _apply_profile_boost(search_results, profile_embedding)
+            has_personalization = True
+        except Exception:
+            logger.warning("search.personalization_failed")
+
     latency_ms = (time.time() - start_time) * 1000
 
     logger.info(
@@ -94,6 +112,7 @@ async def search(
         returned=len(search_results),
         latency_ms=round(latency_ms, 1),
         has_reranking="rerank_score" in (search_results[0] if search_results else {}),
+        has_personalization=has_personalization,
     )
 
     return {
@@ -101,3 +120,51 @@ async def search(
         "total": total,
         "latency_ms": round(latency_ms, 1),
     }
+
+
+def _apply_profile_boost(
+    results: list[dict[str, Any]],
+    profile_embedding: list[float],
+) -> list[dict[str, Any]]:
+    """Boost search results that align with user profile embedding.
+
+    Uses cosine similarity between profile and job embeddings to add a
+    small personalization bonus to the final score.
+
+    Args:
+        results: Search results with optional 'embedding' field.
+        profile_embedding: User profile embedding (768-dim).
+
+    Returns:
+        Re-sorted results with profile_boost score added.
+    """
+    import numpy as np
+
+    prof = np.array(profile_embedding, dtype=np.float32)
+    prof_norm = np.linalg.norm(prof)
+    if prof_norm == 0:
+        return results
+
+    prof = prof / prof_norm
+
+    for result in results:
+        job_emb = result.get("embedding")
+        if job_emb and isinstance(job_emb, list):
+            job_vec = np.array(job_emb, dtype=np.float32)
+            job_norm = np.linalg.norm(job_vec)
+            if job_norm > 0:
+                similarity = float(np.dot(prof, job_vec / job_norm))
+                # Small boost: 10% weight for personalization
+                result["profile_boost"] = max(0.0, similarity) * 0.1
+            else:
+                result["profile_boost"] = 0.0
+        else:
+            result["profile_boost"] = 0.0
+
+    # Re-sort: use existing score (rerank_score or rrf_score) + profile_boost
+    def sort_key(r: dict[str, Any]) -> float:
+        base = float(r.get("rerank_score", r.get("rrf_score", 0.0)))
+        return base + float(r.get("profile_boost", 0.0))
+
+    results.sort(key=sort_key, reverse=True)
+    return results

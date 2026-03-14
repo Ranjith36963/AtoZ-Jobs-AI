@@ -7,6 +7,7 @@ prediction for jobs missing salary data.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -85,7 +86,7 @@ async def enrich_companies(
                 "company_status": profile.get("company_status"),
                 "date_of_creation": profile.get("date_of_creation"),
                 "registered_address": profile.get("registered_office_address"),
-                "enriched_at": "now()",
+                "enriched_at": datetime.now(tz=timezone.utc).isoformat(),
             }
 
             db_client.table("companies").update(update_data).eq(
