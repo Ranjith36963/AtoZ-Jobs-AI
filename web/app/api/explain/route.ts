@@ -12,7 +12,11 @@ const requestSchema = z.object({
     title: z.string(),
     company_name: z.string(),
     location_city: z.string().nullable(),
+    skills: z.array(z.string()).optional(),
+    salary_annual_min: z.number().nullable().optional(),
+    salary_annual_max: z.number().nullable().optional(),
   }),
+  profile: z.string().optional(),
 });
 
 const FALLBACK_RESPONSE = JSON.stringify({
@@ -39,7 +43,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { query, job } = parsed.data;
+  const { query, job, profile } = parsed.data;
 
   // Budget guard check
   try {
@@ -71,11 +75,22 @@ export async function POST(request: Request) {
       : undefined,
   });
 
-  const prompt = `You are a UK job search assistant. Given a user's search query and a job listing, explain in 2-3 sentences why this job is a good match. Be specific about matching skills, location, or requirements. Keep it concise and helpful.
+  // SPEC §6.1 exact prompt
+  const salaryStr = job.salary_annual_min
+    ? `£${job.salary_annual_min}–£${job.salary_annual_max}`
+    : "Not disclosed";
+
+  const prompt = `You are a UK careers advisor. Explain in 2-3 sentences why this job matches the user's search.
 
 User searched for: "${query}"
+${profile ? `User profile: ${profile}` : ""}
 
-Job: ${job.title} at ${job.company_name}${job.location_city ? ` in ${job.location_city}` : ""}`;
+Job: ${job.title} at ${job.company_name}
+Location: ${job.location_city || "Not specified"}
+Skills required: ${job.skills?.join(", ") || "Not specified"}
+Salary: ${salaryStr}
+
+Be specific about skill matches and location relevance. Be honest about gaps. Keep it under 50 words.`;
 
   const result = streamText({
     model: openai("gpt-4o-mini"),
@@ -84,10 +99,12 @@ Job: ${job.title} at ${job.company_name}${job.location_city ? ` in ${job.locatio
     temperature: 0.3,
   });
 
-  // Fire-and-forget audit log
-  logExplanationAudit(query, job.id).catch(() => {
-    /* swallow */
-  });
+  // Fire-and-forget audit log (captures token_count after stream completes)
+  Promise.resolve(result.usage)
+    .then((usage) => logExplanationAudit(query, job.id, usage))
+    .catch(() => {
+      /* swallow */
+    });
 
   return result.toTextStreamResponse();
 }
@@ -95,9 +112,13 @@ Job: ${job.title} at ${job.company_name}${job.location_city ? ` in ${job.locatio
 async function logExplanationAudit(
   query: string,
   jobId: number,
+  usage?: { inputTokens?: number; outputTokens?: number } | null,
 ): Promise<void> {
   try {
     const admin = createAdminClient();
+    const tokenCount = usage
+      ? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)
+      : null;
     const insertData = {
       decision_type: "match_explanation",
       model_provider: "openai",
@@ -107,6 +128,7 @@ async function logExplanationAudit(
       output_summary: "streamed explanation",
       job_id: jobId,
       cost_usd: 0.0005, // Approximate cost per explanation
+      token_count: tokenCount,
     };
     await (
       admin.from("ai_decision_audit_log") as unknown as {

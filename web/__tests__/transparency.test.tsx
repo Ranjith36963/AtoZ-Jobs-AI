@@ -12,16 +12,16 @@ describe("Transparency page", () => {
     ).toBeInTheDocument();
   });
 
-  it("contains all 7 required sections", () => {
+  it("contains all 7 required sections per SPEC §9.4", () => {
     render(<TransparencyPage />);
     const expectedSections = [
-      "AI Systems We Use",
-      "How AI Affects Your Results",
-      "AI Disclosure Labels",
-      "Data Sources",
-      "Decision Logging",
-      "Human Oversight",
-      "Contact & Feedback",
+      "How AI Powers AtoZ Jobs",
+      "Models Used",
+      "What AI Decides",
+      "What AI Does NOT Decide",
+      "Known Limitations",
+      "How to Contest",
+      "Last Updated",
     ];
     for (const section of expectedSections) {
       expect(
@@ -30,7 +30,7 @@ describe("Transparency page", () => {
     }
   });
 
-  it("renders AIDisclosure examples in section 3", () => {
+  it("renders AIDisclosure examples in section 1", () => {
     render(<TransparencyPage />);
     // inline variant
     expect(screen.getByText("AI-generated")).toBeInTheDocument();
@@ -45,5 +45,18 @@ describe("Transparency page", () => {
   it("has ISR revalidate = 86400", async () => {
     const mod = await import("@/app/transparency/page");
     expect((mod as Record<string, unknown>).revalidate).toBe(86400);
+  });
+
+  it("lists specific model names", () => {
+    render(<TransparencyPage />);
+    expect(screen.getByText(/Gemini embedding-001/)).toBeInTheDocument();
+    expect(screen.getByText(/ms-marco-MiniLM-L-6-v2/)).toBeInTheDocument();
+    expect(screen.getByText(/GPT-4o-mini/)).toBeInTheDocument();
+    expect(screen.getByText(/XGBoost/)).toBeInTheDocument();
+  });
+
+  it("mentions salary prediction MAE", () => {
+    render(<TransparencyPage />);
+    expect(screen.getByText(/±£5,000–£8,000/)).toBeInTheDocument();
   });
 });

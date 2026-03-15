@@ -4,6 +4,7 @@ export function GET() {
   const body = `User-agent: *
 Allow: /
 Disallow: /api/
+Disallow: /profile/
 
 Sitemap: ${SITE_URL}/sitemap.xml
 `;

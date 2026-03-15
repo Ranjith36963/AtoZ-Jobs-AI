@@ -6,12 +6,14 @@ vi.mock("@/lib/supabase/server", () => ({
     from: () => ({
       select: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
-          order: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue({
-              data: [
-                { id: 101, date_posted: "2026-03-10T00:00:00Z" },
-                { id: 102, date_posted: "2026-03-09T00:00:00Z" },
-              ],
+          or: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({
+                data: [
+                  { id: 101, date_posted: "2026-03-10T00:00:00Z" },
+                  { id: 102, date_posted: "2026-03-09T00:00:00Z" },
+                ],
+              }),
             }),
           }),
         }),
@@ -55,6 +57,27 @@ describe("sitemap.xml route", () => {
 
     expect(response.headers.get("Cache-Control")).toContain("max-age=3600");
   });
+
+  it("includes changefreq tags", async () => {
+    const { GET } = await import("@/app/sitemap.xml/route");
+    const response = await GET();
+    const body = await response.text();
+
+    expect(body).toContain("<changefreq>weekly</changefreq>");
+  });
+
+  it("sets transparency priority to 0.5", async () => {
+    const { GET } = await import("@/app/sitemap.xml/route");
+    const response = await GET();
+    const body = await response.text();
+
+    // Find the transparency URL entry and verify priority
+    const transparencyMatch = body.match(
+      /transparency[\s\S]*?<priority>([\d.]+)<\/priority>/,
+    );
+    expect(transparencyMatch).not.toBeNull();
+    expect(transparencyMatch![1]).toBe("0.5");
+  });
 });
 
 describe("robots.txt route", () => {
@@ -79,6 +102,14 @@ describe("robots.txt route", () => {
     const body = await response.text();
 
     expect(body).toContain("Disallow: /api/");
+  });
+
+  it("disallows crawling of profile routes", async () => {
+    const { GET } = await import("@/app/robots.txt/route");
+    const response = GET();
+    const body = await response.text();
+
+    expect(body).toContain("Disallow: /profile/");
   });
 
   it("includes sitemap reference", async () => {

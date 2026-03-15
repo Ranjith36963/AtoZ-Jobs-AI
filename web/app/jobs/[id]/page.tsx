@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import DOMPurify from "isomorphic-dompurify";
 import { createServerCaller } from "@/lib/trpc/server";
 import { SalaryBadge } from "@/components/jobs/SalaryBadge";
 import { SkillsPills } from "@/components/jobs/SkillsPills";
 import { CompanyInfo } from "@/components/jobs/CompanyInfo";
 import { ApplyButton } from "@/components/jobs/ApplyButton";
 import { LazyMatchExplanation } from "@/components/jobs/LazyMatchExplanation";
+import { RelatedJobs } from "@/components/jobs/RelatedJobs";
+import { JobPostingJsonLd } from "@/components/seo/JobPostingJsonLd";
 
 export const revalidate = 1800; // ISR: 30 minutes
 
@@ -115,14 +118,23 @@ export default async function JobPage({ params, searchParams }: JobPageProps) {
         <CompanyInfo company={job.company} />
       </div>
 
-      {/* 6. Description */}
+      {/* 6. Description (sanitized HTML via DOMPurify) */}
       <div className="mt-6">
         <h2 className="text-xl font-semibold text-gray-900">
           Job Description
         </h2>
-        <div className="prose mt-3 max-w-none text-gray-700">
-          {job.description_plain ?? job.description}
-        </div>
+        {job.description ? (
+          <div
+            className="prose mt-3 max-w-none text-gray-700"
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(job.description),
+            }}
+          />
+        ) : (
+          <div className="prose mt-3 max-w-none text-gray-700">
+            {job.description_plain}
+          </div>
+        )}
       </div>
 
       {/* 7. Skills */}
@@ -152,10 +164,18 @@ export default async function JobPage({ params, searchParams }: JobPageProps) {
         </div>
       )}
 
+      {/* 9. Related Jobs */}
+      <div className="mt-6">
+        <RelatedJobs jobId={job.id} />
+      </div>
+
       {/* 10. Apply Button */}
       <div className="mt-8">
         <ApplyButton sourceUrl={job.source_url} jobTitle={job.title} />
       </div>
+
+      {/* JSON-LD structured data */}
+      <JobPostingJsonLd job={job} />
 
       {/* Meta info */}
       <div className="mt-8 border-t border-gray-200 pt-4 text-xs text-gray-400">

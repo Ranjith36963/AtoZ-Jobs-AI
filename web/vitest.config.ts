@@ -8,6 +8,7 @@ const config = defineConfig({
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     globals: true,
+    exclude: ["tests/**", "node_modules/**"],
   },
   resolve: {
     alias: {

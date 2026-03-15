@@ -80,4 +80,25 @@ describe("Audit log integration", () => {
     expect(budgetGuardCode).toContain("cost_usd");
     expect(budgetGuardCode).toContain("match_explanation");
   });
+
+  it("explain route logs token_count (S25 hard fail)", async () => {
+    const fs = await import("fs");
+    const explainRouteCode = fs.readFileSync(
+      "app/api/explain/route.ts",
+      "utf-8",
+    );
+    expect(explainRouteCode).toContain("token_count");
+  });
+
+  it("explain route uses SPEC §6.1 prompt", async () => {
+    const fs = await import("fs");
+    const explainRouteCode = fs.readFileSync(
+      "app/api/explain/route.ts",
+      "utf-8",
+    );
+    // SPEC §6.1 requires "UK careers advisor" prompt with skills, salary, 50-word limit
+    expect(explainRouteCode).toContain("UK careers advisor");
+    expect(explainRouteCode).toContain("Skills required");
+    expect(explainRouteCode).toContain("under 50 words");
+  });
 });
