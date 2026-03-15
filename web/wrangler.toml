@@ -3,10 +3,8 @@ compatibility_date = "2026-03-01"
 compatibility_flags = ["nodejs_compat"]
 main = ".open-next/worker.js"
 
-# Externalize node:sqlite — not available in workerd runtime,
-# but transitively imported by undici's sqlite-cache-store (dead code path)
-[build]
-external = ["node:sqlite"]
+# node:sqlite (from undici's sqlite-cache-store) is excluded via
+# webpack resolve.alias in next.config.ts — not available in workerd runtime.
 
 [assets]
 directory = ".open-next/assets"
