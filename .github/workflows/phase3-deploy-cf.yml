@@ -48,10 +48,12 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
+      - name: Build for Cloudflare
+        run: pnpm exec opennextjs-cloudflare build
+
       - name: Deploy to Cloudflare Workers
-        # wrangler auto-detects the OpenNext project and runs
-        # opennextjs-cloudflare build + deploy in a single step.
-        # node:sqlite is resolved via [alias] in wrangler.toml.
+        # node:sqlite is resolved via [alias] in wrangler.toml
+        # (maps to esbuild alias), no sed patch needed.
         run: pnpm exec wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
