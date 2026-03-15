@@ -250,22 +250,28 @@ TOTAL                :136 PASS, 13 SKIP,  0 FAIL
 
 #### Deployment Verification (2026-03-15)
 
-**CI workflow `phase3-deploy-cf.yml` ran green.** However, the site at `4885ba95.atozjobs.pages.dev` returns HTTP 404 (empty body) on all routes. Root cause:
+**CI workflow `phase3-deploy-cf.yml` ran green.** CF dashboard shows Status: Success, 701 files uploaded. However, `https://4885ba95.atozjobs.pages.dev` returns HTTP 404 (empty body, `content-length: 0`) on all routes including `/`, `/search`, `/transparency`, `/favicon.ico`.
 
-- **OpenNext for Cloudflare deploys to Workers**, not Pages (`wrangler deploy` → `atozjobs.<subdomain>.workers.dev`)
-- The `4885ba95.atozjobs.pages.dev` URL is a **Cloudflare Pages** URL — different product from Workers
-- The Workers deployment succeeded (CI green), but the live Workers URL needs to be confirmed from the workflow logs
+**Diagnosis:**
+- Connection reaches Cloudflare edge (valid `cf-ray`, `server: cloudflare` headers)
+- TLS cert valid for `*.atozjobs.pages.dev`
+- 404 comes from Cloudflare, not proxy (confirmed via cf-ray header)
+- Build output is correct: `routes-manifest.json` has routes, `handler.mjs` is 11MB, `worker.js` entry point delegates to middleware → server handler
+- **Root cause:** `wrangler.toml` was missing required config vs OpenNext template:
+  1. Missing `global_fetch_strictly_public` compatibility flag
+  2. Missing `WORKER_SELF_REFERENCE` service binding (required by OpenNext for internal routing)
+  3. CI used `wrangler deploy` instead of `opennextjs-cloudflare deploy` (skips cache population + skew protection)
 
-**Action required:** Re-run `phase3-deploy-cf.yml` (updated to capture the Workers URL) or check Cloudflare dashboard for the Workers subdomain (Settings → Workers → Your subdomain).
+**Fix applied:** Updated `wrangler.toml` with missing flags/bindings, CI workflow to use `opennextjs-cloudflare deploy`, and `build:cf` script. **Requires re-deploy.**
 
-#### Remaining 13 SKIPs (require confirmed live Workers URL)
+#### Remaining 13 SKIPs (require re-deploy with fixed config)
 
 | # | Skip Reason | Count | Checks | Resolution |
 |---|-------------|-------|--------|------------|
-| 1 | Workers URL confirmation | 5 | G23-G25, G29, G34 | Find Workers subdomain from CF dashboard or re-run deploy workflow |
-| 2 | Post-deployment verification | 3 | G30, G31, G33 | Verify ISR, explanations, mobile on live Workers URL |
-| 3 | 24-hour monitoring | 4 | G35-G38 | Monitor after confirming live URL (Sentry, PostHog, CF Analytics) |
-| 4 | ISR production | 1 | P2 | Verify revalidation on live Workers URL |
+| 1 | Re-deploy with fixed wrangler.toml | 5 | G23-G25, G29, G34 | Re-run `phase3-deploy-cf.yml` with updated config |
+| 2 | Post-deployment verification | 3 | G30, G31, G33 | Verify ISR, explanations, mobile after re-deploy |
+| 3 | 24-hour monitoring | 4 | G35-G38 | Monitor after successful deploy (Sentry, PostHog, CF Analytics) |
+| 4 | ISR production | 1 | P2 | Verify revalidation after re-deploy |
 
 #### Known Data Issues
 
@@ -322,16 +328,15 @@ To complete the remaining 18 skipped checks:
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `phase3-deploy-cf.yml` | workflow_dispatch | Build + deploy to Cloudflare Pages |
+| `phase3-deploy-cf.yml` | workflow_dispatch | Build + deploy to Cloudflare (OpenNext + Workers) |
 | `phase3-lighthouse.yml` | workflow_dispatch | Lighthouse CI against deployed site |
 
 ---
 
 ## Next Steps
 
-Phase 3 is code-complete. **136/149 checks pass (91%).** Remaining 13 checks require the live Workers URL:
-- CI workflow deploys to **Cloudflare Workers** (not Pages) — deployment succeeded but URL needs confirmation
-- Re-run updated `phase3-deploy-cf.yml` or check CF dashboard for Workers subdomain
-- Once URL confirmed: verify homepage/search/transparency, ISR, mobile
-- Monitor first 24 hours of production traffic (Sentry, PostHog, CF Analytics)
-- Tag v0.3.0 and merge display-phase → main
+Phase 3 is code-complete. **136/149 checks pass (91%).** Remaining 13 checks require re-deploy with fixed config:
+1. **Re-deploy:** Run `phase3-deploy-cf.yml` (updated to use `opennextjs-cloudflare deploy` + fixed `wrangler.toml`)
+2. **Verify:** Homepage (200), `/search?q=developer` (200), `/transparency` (200), viewport meta, cache-control headers
+3. **Monitor:** First 24 hours of production traffic (Sentry, PostHog, CF Analytics)
+4. **Tag:** v0.3.0 and merge display-phase → main
