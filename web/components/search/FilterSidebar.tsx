@@ -30,12 +30,14 @@ export function FilterSidebar({ facets }: FilterSidebarProps) {
 
   const currentCategory = searchParams.get("category");
   const currentWorkType = searchParams.get("workType");
+  const currentEmploymentType = searchParams.get("employmentType");
   const currentSeniority = searchParams.get("seniority");
   const currentDatePosted = searchParams.get("datePosted");
 
   const activeFilterCount = [
     currentCategory,
     currentWorkType,
+    currentEmploymentType,
     currentSeniority,
     currentDatePosted,
     searchParams.get("minSalary"),
@@ -142,6 +144,13 @@ export function FilterSidebar({ facets }: FilterSidebarProps) {
             <label key={et} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
+                checked={currentEmploymentType === et}
+                onChange={() =>
+                  updateFilter(
+                    "employmentType",
+                    currentEmploymentType === et ? null : et,
+                  )
+                }
                 className="rounded border-gray-300"
               />
               <span className="capitalize text-gray-700">{et}</span>

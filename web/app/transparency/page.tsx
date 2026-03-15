@@ -215,13 +215,58 @@ export function TransparencyPage() {
         </div>
       </section>
 
-      {/* Section 7: Last Updated */}
+      {/* Section 7: Accessibility */}
+      <section className="mt-10" aria-labelledby="accessibility-heading" id="accessibility">
+        <h2
+          id="accessibility-heading"
+          className="text-xl font-semibold text-gray-900"
+        >
+          7. Accessibility
+        </h2>
+        <div className="mt-4 space-y-3 text-sm text-gray-700">
+          <p>
+            AtoZ Jobs is designed to meet WCAG 2.1 Level AA standards. We aim
+            to make our platform accessible to all users, including those who
+            rely on assistive technologies.
+          </p>
+          <ul className="list-disc space-y-2 pl-6">
+            <li>
+              <strong>Keyboard navigation</strong> — All interactive elements
+              are reachable and operable via keyboard.
+            </li>
+            <li>
+              <strong>Screen readers</strong> — Semantic HTML, ARIA labels, and
+              landmark roles are used throughout.
+            </li>
+            <li>
+              <strong>Skip links</strong> — A skip-to-content link is provided
+              on every page.
+            </li>
+            <li>
+              <strong>Colour contrast</strong> — Text and interactive elements
+              meet minimum contrast ratios.
+            </li>
+          </ul>
+          <p>
+            If you encounter an accessibility barrier, please contact us at{" "}
+            <a
+              href="mailto:feedback@atozjobs.ai"
+              className="text-teal-600 underline hover:text-teal-700"
+            >
+              feedback@atozjobs.ai
+            </a>
+            .
+          </p>
+        </div>
+      </section>
+
+      {/* Section 8: Last Updated */}
       <section className="mt-10" aria-labelledby="last-updated">
         <h2
           id="last-updated"
           className="text-xl font-semibold text-gray-900"
         >
-          7. Last Updated
+          8. Last Updated
         </h2>
         <div className="mt-4 text-sm text-gray-700">
           <p>This transparency statement was last updated in March 2026.</p>
