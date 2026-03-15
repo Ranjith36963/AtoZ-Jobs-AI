@@ -3,6 +3,11 @@ compatibility_date = "2026-03-01"
 compatibility_flags = ["nodejs_compat"]
 main = ".open-next/worker.js"
 
+# Externalize node:sqlite — not available in workerd runtime,
+# but transitively imported by undici's sqlite-cache-store (dead code path)
+[build]
+external = ["node:sqlite"]
+
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
