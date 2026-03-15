@@ -51,6 +51,9 @@ jobs:
       - name: Build for Cloudflare
         run: npx @opennextjs/cloudflare build
 
+      - name: Install wrangler
+        run: pnpm add -D wrangler
+
       - name: Deploy to Cloudflare Pages
         run: npx wrangler pages deploy .open-next --project-name atozjobs
         env:
