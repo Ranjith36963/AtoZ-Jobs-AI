@@ -11,7 +11,7 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "build:cf": "npx @opennextjs/cloudflare build && wrangler deploy"
+    "build:cf": "pnpm exec opennextjs-cloudflare build && pnpm exec wrangler deploy"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.41",
@@ -54,6 +54,7 @@
     "tailwindcss": "^4",
     "typescript": "^5.8",
     "typescript-eslint": "^8.57.0",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "wrangler": "^4.14.0"
   }
 }
