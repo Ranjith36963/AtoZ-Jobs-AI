@@ -64,38 +64,44 @@ function SearchPageContent() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
-      {/* Search bar */}
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="flex-1">
-          <SearchInput />
-        </div>
-        <div className="flex gap-3">
-          <LocationAutocomplete />
-          <RadiusSelector />
+    <main id="main-content" className="flex-1 bg-gray-50">
+      {/* Search bar area */}
+      <div className="border-b border-gray-200 bg-white px-4 py-4 shadow-sm">
+        <div className="mx-auto max-w-7xl">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex-1">
+              <SearchInput />
+            </div>
+            <div className="flex gap-3">
+              <LocationAutocomplete />
+              <RadiusSelector />
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Main content */}
-      <div className="flex gap-8">
-        {/* Sidebar */}
-        <div className="w-full shrink-0 lg:w-1/4">
-          <FilterSidebar facets={facetsQuery.data ?? emptyFacets} />
-        </div>
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        <div className="flex gap-8">
+          {/* Sidebar */}
+          <div className="w-full shrink-0 lg:w-64">
+            <FilterSidebar facets={facetsQuery.data ?? emptyFacets} />
+          </div>
 
-        {/* Results */}
-        <div className="min-w-0 flex-1">
-          <SearchResultsGrid
-            results={searchQuery.data?.results ?? []}
-            total={searchQuery.data?.total ?? 0}
-            isLoading={searchQuery.isLoading}
-            page={page}
-            pageSize={20}
-            error={searchQuery.error?.message}
-          />
+          {/* Results */}
+          <div className="min-w-0 flex-1">
+            <SearchResultsGrid
+              results={searchQuery.data?.results ?? []}
+              total={searchQuery.data?.total ?? 0}
+              isLoading={searchQuery.isLoading}
+              page={page}
+              pageSize={20}
+              error={searchQuery.error?.message}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -103,7 +109,9 @@ export default function SearchPage() {
   return (
     <Suspense
       fallback={
-        <div className="py-12 text-center text-gray-500">Loading search...</div>
+        <div className="flex flex-1 items-center justify-center bg-gray-50 py-12 text-gray-500">
+          Loading search...
+        </div>
       }
     >
       <SearchPageContent />

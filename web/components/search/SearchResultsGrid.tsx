@@ -23,10 +23,14 @@ export function SearchResultsGrid({
 }: SearchResultsGridProps) {
   if (error) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-lg text-red-600">
-          Something went wrong. Please try again.
+      <div className="rounded-xl border border-red-200 bg-red-50 px-6 py-12 text-center">
+        <svg className="mx-auto h-10 w-10 text-red-400" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+        </svg>
+        <p className="mt-3 text-lg font-medium text-red-800">
+          Something went wrong
         </p>
+        <p className="mt-1 text-sm text-red-600">Please try again in a moment.</p>
       </div>
     );
   }
@@ -43,9 +47,15 @@ export function SearchResultsGrid({
 
   if (results.length === 0) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-lg text-gray-600">
-          No jobs match your search. Try broadening your filters.
+      <div className="rounded-xl border border-gray-200 bg-white px-6 py-12 text-center">
+        <svg className="mx-auto h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+        </svg>
+        <p className="mt-3 text-lg font-medium text-gray-900">
+          No jobs found
+        </p>
+        <p className="mt-1 text-sm text-gray-500">
+          Try broadening your search or removing some filters.
         </p>
       </div>
     );

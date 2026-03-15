@@ -2,55 +2,60 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { usePathname } from "next/navigation";
+
+const NAV_LINKS = [
+  { href: "/", label: "Home" },
+  { href: "/search", label: "Search" },
+  { href: "/transparency", label: "Transparency" },
+] as const;
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const pathname = usePathname();
 
   return (
-    <header className="border-b border-gray-200 bg-white" role="banner">
+    <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur-sm" role="banner">
       <nav
         className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8"
         aria-label="Main navigation"
       >
         <Link
           href="/"
-          className="text-xl font-bold tracking-tight text-gray-900"
+          className="flex items-center gap-2 text-xl font-bold tracking-tight text-gray-900"
         >
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">
+            Az
+          </span>
           AtoZ Jobs
         </Link>
 
         {/* Desktop nav */}
-        <ul className="hidden items-center gap-6 sm:flex" role="list">
-          <li>
-            <Link
-              href="/"
-              className="text-sm font-medium text-gray-700 hover:text-gray-900"
-            >
-              Home
-            </Link>
-          </li>
-          <li>
-            <Link
-              href="/search"
-              className="text-sm font-medium text-gray-700 hover:text-gray-900"
-            >
-              Search
-            </Link>
-          </li>
-          <li>
-            <Link
-              href="/transparency"
-              className="text-sm font-medium text-gray-700 hover:text-gray-900"
-            >
-              Transparency
-            </Link>
-          </li>
+        <ul className="hidden items-center gap-1 sm:flex" role="list">
+          {NAV_LINKS.map((link) => {
+            const isActive = pathname === link.href;
+            return (
+              <li key={link.href}>
+                <Link
+                  href={link.href}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-blue-50 text-blue-700"
+                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  }`}
+                  aria-current={isActive ? "page" : undefined}
+                >
+                  {link.label}
+                </Link>
+              </li>
+            );
+          })}
         </ul>
 
         {/* Mobile hamburger */}
         <button
           type="button"
-          className="sm:hidden rounded-md p-2 text-gray-700 hover:bg-gray-100"
+          className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 sm:hidden"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-menu"
@@ -83,35 +88,27 @@ export function Header() {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <div id="mobile-menu" className="border-t border-gray-200 sm:hidden">
+        <div id="mobile-menu" className="border-t border-gray-100 bg-white sm:hidden">
           <ul className="space-y-1 px-4 py-3" role="list">
-            <li>
-              <Link
-                href="/"
-                className="block rounded-md px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-100"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Home
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/search"
-                className="block rounded-md px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-100"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Search
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/transparency"
-                className="block rounded-md px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-100"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Transparency
-              </Link>
-            </li>
+            {NAV_LINKS.map((link) => {
+              const isActive = pathname === link.href;
+              return (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    className={`block rounded-lg px-3 py-2.5 text-base font-medium transition-colors ${
+                      isActive
+                        ? "bg-blue-50 text-blue-700"
+                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    }`}
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
