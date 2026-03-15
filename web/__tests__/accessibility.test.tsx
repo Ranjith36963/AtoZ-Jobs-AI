@@ -82,7 +82,7 @@ describe("Accessibility", () => {
       const { TransparencyPage } = await import("@/app/transparency/page");
       const { container } = render(<TransparencyPage />);
       const sections = container.querySelectorAll("section[aria-labelledby]");
-      expect(sections.length).toBe(7);
+      expect(sections.length).toBe(8);
 
       // Each section should reference a heading id that exists
       for (const section of sections) {
