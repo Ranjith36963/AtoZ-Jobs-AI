@@ -248,14 +248,24 @@ TOTAL                :136 PASS, 13 SKIP,  0 FAIL
 | G26 | E2E search via Modal | 50 results returned, all with rerank_score, 20 fields, sorted by relevance |
 | S27 | OpenAI spending cap | $50/month cap set in OpenAI dashboard |
 
-#### Remaining 13 SKIPs (all require live Cloudflare deployment)
+#### Deployment Verification (2026-03-15)
+
+**CI workflow `phase3-deploy-cf.yml` ran green.** However, the site at `4885ba95.atozjobs.pages.dev` returns HTTP 404 (empty body) on all routes. Root cause:
+
+- **OpenNext for Cloudflare deploys to Workers**, not Pages (`wrangler deploy` → `atozjobs.<subdomain>.workers.dev`)
+- The `4885ba95.atozjobs.pages.dev` URL is a **Cloudflare Pages** URL — different product from Workers
+- The Workers deployment succeeded (CI green), but the live Workers URL needs to be confirmed from the workflow logs
+
+**Action required:** Re-run `phase3-deploy-cf.yml` (updated to capture the Workers URL) or check Cloudflare dashboard for the Workers subdomain (Settings → Workers → Your subdomain).
+
+#### Remaining 13 SKIPs (require confirmed live Workers URL)
 
 | # | Skip Reason | Count | Checks | Resolution |
 |---|-------------|-------|--------|------------|
-| 1 | Cloudflare Pages deployment | 5 | G23-G25, G29, G34 | Run `phase3-deploy-cf.yml` workflow |
-| 2 | Post-deployment verification | 3 | G30, G31, G33 | Verify ISR, explanations, mobile on live site |
-| 3 | 24-hour monitoring | 4 | G35-G38 | Monitor after deploy (Sentry, PostHog, CF Analytics) |
-| 4 | ISR production | 1 | P2 | Verify revalidation on CF Pages |
+| 1 | Workers URL confirmation | 5 | G23-G25, G29, G34 | Find Workers subdomain from CF dashboard or re-run deploy workflow |
+| 2 | Post-deployment verification | 3 | G30, G31, G33 | Verify ISR, explanations, mobile on live Workers URL |
+| 3 | 24-hour monitoring | 4 | G35-G38 | Monitor after confirming live URL (Sentry, PostHog, CF Analytics) |
+| 4 | ISR production | 1 | P2 | Verify revalidation on live Workers URL |
 
 #### Known Data Issues
 
@@ -319,8 +329,9 @@ To complete the remaining 18 skipped checks:
 
 ## Next Steps
 
-Phase 3 is code-complete. **136/149 checks pass (91%).** Remaining 13 checks all require a live Cloudflare deployment:
-- Deploy to Cloudflare Pages (`phase3-deploy-cf.yml` workflow ready)
+Phase 3 is code-complete. **136/149 checks pass (91%).** Remaining 13 checks require the live Workers URL:
+- CI workflow deploys to **Cloudflare Workers** (not Pages) — deployment succeeded but URL needs confirmation
+- Re-run updated `phase3-deploy-cf.yml` or check CF dashboard for Workers subdomain
+- Once URL confirmed: verify homepage/search/transparency, ISR, mobile
 - Monitor first 24 hours of production traffic (Sentry, PostHog, CF Analytics)
-- Verify ISR revalidation on live site
 - Tag v0.3.0 and merge display-phase → main

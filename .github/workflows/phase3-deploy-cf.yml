@@ -52,9 +52,26 @@ jobs:
         run: pnpm exec opennextjs-cloudflare build
 
       - name: Deploy to Cloudflare Workers
+        # OpenNext for Cloudflare targets Workers (not Pages).
         # node:sqlite is resolved via [alias] in wrangler.toml
         # (maps to esbuild alias), no sed patch needed.
-        run: pnpm exec wrangler deploy
+        run: |
+          pnpm exec wrangler deploy 2>&1 | tee /tmp/deploy-output.txt
+          echo "---"
+          echo "Deploy output above. Look for the Workers URL (https://atozjobs.<subdomain>.workers.dev)"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Verify deployment
+        run: |
+          # Extract the deployed URL from wrangler output
+          DEPLOY_URL=$(grep -oP 'https://[^\s]+\.workers\.dev' /tmp/deploy-output.txt | head -1 || true)
+          if [ -n "$DEPLOY_URL" ]; then
+            echo "Deployed to: $DEPLOY_URL"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$DEPLOY_URL" || true)
+            echo "Homepage HTTP status: $HTTP_CODE"
+          else
+            echo "Warning: Could not extract Workers URL from deploy output"
+            echo "Check the deploy step output for the live URL"
+          fi
