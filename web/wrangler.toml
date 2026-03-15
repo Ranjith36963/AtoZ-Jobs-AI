@@ -3,8 +3,11 @@ compatibility_date = "2026-03-01"
 compatibility_flags = ["nodejs_compat"]
 main = ".open-next/worker.js"
 
-# node:sqlite (from undici's sqlite-cache-store) is excluded via
-# webpack resolve.alias in next.config.ts — not available in workerd runtime.
+# node:sqlite (from undici's sqlite-cache-store) is not available in the workerd
+# runtime.  The webpack/turbopack aliases in next.config.ts handle the Next.js
+# build, but wrangler's own esbuild pass needs this alias too.
+[alias]
+"node:sqlite" = "./shims/node-sqlite.mjs"
 
 [assets]
 directory = ".open-next/assets"
