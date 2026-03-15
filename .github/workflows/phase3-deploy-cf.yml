@@ -1,4 +1,4 @@
-name: Deploy to Cloudflare Workers
+name: Deploy to Cloudflare
 on:
   workflow_dispatch:
     inputs:
@@ -48,13 +48,29 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
-      - name: Build for Cloudflare
-        run: pnpm exec opennextjs-cloudflare build
-
-      - name: Deploy to Cloudflare Workers
-        # node:sqlite is resolved via [alias] in wrangler.toml
-        # (maps to esbuild alias), no sed patch needed.
-        run: pnpm exec wrangler deploy
+      - name: Build and deploy via OpenNext
+        # Use opennextjs-cloudflare CLI (not raw wrangler deploy) to handle
+        # cache population and skew protection before deployment.
+        run: |
+          pnpm exec opennextjs-cloudflare build
+          pnpm exec opennextjs-cloudflare deploy 2>&1 | tee /tmp/deploy-output.txt
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Verify deployment
+        run: |
+          # Extract the deployed URL from output
+          DEPLOY_URL=$(grep -oP 'https://[^\s]+\.(workers|pages)\.dev' /tmp/deploy-output.txt | head -1 || true)
+          if [ -n "$DEPLOY_URL" ]; then
+            echo "Deployed to: $DEPLOY_URL"
+            sleep 5
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$DEPLOY_URL" || true)
+            echo "Homepage HTTP status: $HTTP_CODE"
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "::warning::Homepage returned HTTP $HTTP_CODE (expected 200)"
+            fi
+          else
+            echo "Warning: Could not extract URL from deploy output"
+            echo "Check the deploy step output for the live URL"
+          fi

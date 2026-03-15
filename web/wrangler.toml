@@ -1,6 +1,6 @@
 name = "atozjobs"
 compatibility_date = "2026-03-01"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 main = ".open-next/worker.js"
 minify = true
 
@@ -13,6 +13,11 @@ minify = true
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
+
+# Self-reference service binding for internal routing (required by OpenNext)
+[[services]]
+binding = "WORKER_SELF_REFERENCE"
+service = "atozjobs"
 
 [vars]
 # Non-secret environment variables can go here
