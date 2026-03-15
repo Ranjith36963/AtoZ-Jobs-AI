@@ -1,7 +1,12 @@
 name = "atozjobs"
 compatibility_date = "2026-03-01"
-pages_build_output_dir = ".open-next"
+compatibility_flags = ["nodejs_compat"]
+main = ".open-next/worker.js"
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
 
 [vars]
 # Non-secret environment variables can go here
-# Secrets must be set via: wrangler pages secret put <KEY>
+# Secrets must be set via: wrangler secret put <KEY>

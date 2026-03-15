@@ -11,7 +11,7 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "build:cf": "npx @opennextjs/cloudflare build && wrangler pages deploy .open-next"
+    "build:cf": "npx @opennextjs/cloudflare build && wrangler deploy"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.41",
