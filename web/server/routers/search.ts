@@ -98,12 +98,13 @@ export const searchRouter = router({
     );
 
     try {
-      const response = await fetch(MODAL_SEARCH_URL, {
+      const url = new URL(MODAL_SEARCH_URL);
+      url.searchParams.set("query", input.q);
+
+      const response = await fetch(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          query: input.q,
-          user_id: null,
           filters: {
             search_lat: input.lat ?? null,
             search_lng: input.lng ?? null,
@@ -118,6 +119,7 @@ export const searchRouter = router({
             exclude_duplicates: input.excludeDuplicates,
             date_posted_after: input.datePosted ?? null,
           },
+          user_id: null,
         }),
         signal: controller.signal,
       });
