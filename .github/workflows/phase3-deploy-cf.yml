@@ -48,15 +48,10 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
-      - name: Build for Cloudflare
-        run: pnpm exec opennextjs-cloudflare build
-
-      - name: Patch node:sqlite import
-        run: |
-          find .open-next -name "*.mjs" -o -name "*.js" | xargs sed -i "s/from 'node:sqlite'/from 'data:text\/javascript,export default undefined'/g" || true
-          find .open-next -name "*.mjs" -o -name "*.js" | xargs sed -i 's/from "node:sqlite"/from "data:text\/javascript,export default undefined"/g' || true
-
       - name: Deploy to Cloudflare Workers
+        # wrangler auto-detects the OpenNext project and runs
+        # opennextjs-cloudflare build + deploy in a single step.
+        # node:sqlite is resolved via [alias] in wrangler.toml.
         run: pnpm exec wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
