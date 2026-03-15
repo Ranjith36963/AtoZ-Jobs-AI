@@ -10,7 +10,7 @@ export async function GET() {
     .eq("status", "ready")
     .or("is_duplicate.is.null,is_duplicate.eq.false")
     .order("date_posted", { ascending: false })
-    .limit(10000);
+    .limit(50000);
 
   const jobs = (data ?? []) as Array<{ id: number; date_posted: string }>;
 

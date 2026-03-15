@@ -1,6 +1,7 @@
 import { JobCard } from "@/components/jobs/JobCard";
 import { JobCardSkeleton } from "@/components/jobs/JobCardSkeleton";
 import { Pagination } from "@/components/ui/Pagination";
+import { AIDisclosure } from "@/components/ui/AIDisclosure";
 import type { SearchResult } from "@/types";
 
 interface SearchResultsGridProps {
@@ -56,9 +57,12 @@ export function SearchResultsGrid({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-600">
-        Showing {start}&ndash;{end} of {total.toLocaleString("en-GB")} jobs
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-600">
+          Showing {start}&ndash;{end} of {total.toLocaleString("en-GB")} jobs
+        </p>
+        <AIDisclosure variant="inline" />
+      </div>
 
       <div className="space-y-3">
         {results.map((result) => (

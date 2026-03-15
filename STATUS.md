@@ -124,6 +124,102 @@ To complete the remaining 91 skipped checks:
 
 ---
 
+## Phase 3: Display Layer
+
+**Status:** Code Complete
+**Completion Date:** 2026-03-15
+**Branch:** `display-phase` (developed on `claude/plan-nextjs-frontend-KSU0h`)
+**Tag:** v0.3.0
+
+### Metrics
+
+| Metric | Value |
+|--------|-------|
+| Source files (TS/TSX) | 80 |
+| Test files | 18 |
+| Tests | 127 passed, 0 failed |
+| TypeScript strict | 0 errors |
+| ESLint | 0 errors |
+| Routes | 8 (5 static, 3 dynamic) |
+| Components | 25 |
+| Migrations | 2 Phase 3 (018-019) |
+| Next.js version | 16.1.6 (CVE-2025-66478 patched) |
+
+### Gate Check Scorecard (149 items)
+
+```
+Gate 1 (Foundation)  : 18 PASS,  3 SKIP,  0 FAIL
+Gate 2 (Search)      : 27 PASS,  1 SKIP,  0 FAIL
+Gate 3 (Performance) :  6 PASS,  9 SKIP,  0 FAIL
+Gate 4 (Compliance)  : 23 PASS,  2 SKIP,  0 FAIL
+Search Queries       : 10 PASS,  0 SKIP,  0 FAIL
+Go/No-Go             : 16 PASS, 24 SKIP,  0 FAIL
+SLAs                 :  3 PASS,  7 SKIP,  0 FAIL
+─────────────────────────────────────────────────
+TOTAL                :103 PASS, 46 SKIP,  0 FAIL
+```
+
+**0 failures.** 46 items skipped — breakdown:
+
+| Skip Reason | Count | Resolution |
+|-------------|-------|------------|
+| Supabase DB credentials (placeholder) | 14 | Set real anon/service keys in .env.local |
+| Cloudflare Pages deployment | 8 | Run `pnpm build:cf` + `wrangler pages deploy` |
+| Production traffic monitoring | 10 | Monitor 24h after deploy (Sentry, PostHog) |
+| Lighthouse on deployed site | 7 | Run `pnpm lhci autorun` against production URL |
+| OpenAI dashboard access | 1 | Set $50/month spending cap |
+| Modal endpoint credentials | 2 | Set MODAL_SEARCH_URL env var |
+| OpenNext build runtime | 4 | Run `pnpm build:cf` in Cloudflare environment |
+
+### What Phase 3 Adds
+
+| Stage | Component | Key Technology |
+|-------|-----------|----------------|
+| 1 | Foundation | Next.js 16 App Router, Turbopack, tRPC, Supabase SSR |
+| 1 | Monitoring | Sentry error tracking, PostHog analytics |
+| 1 | Deployment | Cloudflare Pages (OpenNext adapter, wrangler.toml) |
+| 2 | Search UI | SearchInput, LocationAutocomplete (postcodes.io), RadiusSelector |
+| 2 | Job Cards | SalaryBadge (green/amber/grey), SkillsPills (ESCO links, +N more) |
+| 2 | Filters | FilterSidebar (6 groups), SalaryRangeSlider (ARIA), mobile drawer |
+| 2 | Job Detail | 10 sections, DOMPurify sanitization, CompanyInfo, RelatedJobs |
+| 2 | LLM | GPT-4o-mini explanations, 3-layer budget guard ($45 soft/$50 hard) |
+| 3 | ISR | 30min job detail, 1hr homepage, 24hr transparency, dynamic search |
+| 3 | Performance | HNSW ef_search=100, dynamic imports, Lighthouse CI |
+| 4 | Compliance | EU AI Act (Article 12/13/14/50), transparency page, audit logging |
+| 4 | Accessibility | WCAG 2.1 AA, axe-core Playwright tests, skip link, focus rings |
+| 4 | SEO | JobPosting JSON-LD, sitemap (50K), robots.txt, OG meta tags |
+
+### Migrations (Phase 3)
+
+| # | File | Content |
+|---|------|---------|
+| 018 | `20260301000018_ai_audit_log.sql` | ai_decision_audit_log (EU AI Act Article 12), RLS (service_role only) |
+| 019 | `20260301000019_search_facets.sql` | mv_search_facets, mv_salary_histogram, pg_cron refreshes |
+
+### Deviations (Documented)
+
+1. Default exports on Next.js pages (framework requirement)
+2. Manual fetch instead of useChat (AI SDK v6 migration)
+3. search.related uses category match (not cosine similarity)
+4. Search page renders as static shell (dynamic via client-side tRPC)
+
+### Production Verification Steps
+
+To complete the remaining 46 skipped checks:
+1. Set real Supabase keys in web/.env.local
+2. Run: `supabase db push` for migrations 018-019
+3. Deploy: `pnpm build:cf && wrangler pages deploy .open-next`
+4. Set Cloudflare env vars (SPEC §5.2)
+5. Set OpenAI $50/month spending cap
+6. Run: `pnpm lhci autorun` against production URL
+7. Monitor 24h for G35-G40
+
+---
+
 ## Next Steps
 
-Phase 3: Display — Next.js web application with tRPC search API.
+Phase 3 is code-complete. Remaining work:
+- Deploy to Cloudflare Pages with real credentials
+- Run Lighthouse CI against production site
+- Monitor first 24 hours of production traffic
+- Merge display-phase → main with squash commit

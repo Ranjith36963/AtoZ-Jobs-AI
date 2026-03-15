@@ -29,15 +29,16 @@
     "posthog-js": "^1.360.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "@sentry/nextjs": "^10.43.0",
     "superjson": "^2.2.6",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",
     "@eslint/eslintrc": "^3",
+    "@lhci/cli": "^0.14.0",
     "@opennextjs/cloudflare": "^1.17.1",
     "@playwright/test": "^1.58.2",
-    "@sentry/nextjs": "^10.43.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

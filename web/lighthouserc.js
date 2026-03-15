@@ -5,6 +5,8 @@ module.exports = {
       url: [
         "http://localhost:3000/",
         "http://localhost:3000/search?q=developer",
+        "http://localhost:3000/jobs/1",
+        "http://localhost:3000/transparency",
       ],
       numberOfRuns: 3,
       startServerCommand: "pnpm start",
