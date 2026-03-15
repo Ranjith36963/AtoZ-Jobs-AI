@@ -51,6 +51,11 @@ jobs:
       - name: Build for Cloudflare
         run: pnpm exec opennextjs-cloudflare build
 
+      - name: Patch node:sqlite import
+        run: |
+          find .open-next -name "*.mjs" -o -name "*.js" | xargs sed -i "s/from 'node:sqlite'/from 'data:text\/javascript,export default undefined'/g" || true
+          find .open-next -name "*.mjs" -o -name "*.js" | xargs sed -i 's/from "node:sqlite"/from "data:text\/javascript,export default undefined"/g' || true
+
       - name: Deploy to Cloudflare Workers
         run: pnpm exec wrangler deploy
         env:
