@@ -150,16 +150,16 @@ To complete the remaining 91 skipped checks:
 ```
 Gate 1 (Foundation)  : 21 PASS,  0 SKIP,  0 FAIL
 Gate 2 (Search)      : 27 PASS,  1 SKIP,  0 FAIL
-Gate 3 (Performance) : 12 PASS,  3 SKIP,  0 FAIL
+Gate 3 (Performance) : 14 PASS,  1 SKIP,  0 FAIL
 Gate 4 (Compliance)  : 25 PASS,  0 SKIP,  0 FAIL
 Search Queries       : 10 PASS,  0 SKIP,  0 FAIL
 Go/No-Go             : 30 PASS, 10 SKIP,  0 FAIL
 SLAs                 :  6 PASS,  4 SKIP,  0 FAIL
 ─────────────────────────────────────────────────
-TOTAL                :131 PASS, 18 SKIP,  0 FAIL
+TOTAL                :133 PASS, 16 SKIP,  0 FAIL
 ```
 
-**0 failures.** 28 checks converted SKIP → PASS via remote DB + local verification (2026-03-15).
+**0 failures.** 30 checks converted SKIP → PASS via remote DB + local verification (2026-03-15).
 
 #### Verification Wave 1: Remote DB (12 checks → PASS)
 
@@ -199,6 +199,13 @@ TOTAL                :131 PASS, 18 SKIP,  0 FAIL
 | G13 | axe-core audit | Zero critical/serious violations (Lighthouse a11y 96) |
 | G14 | 10 test queries | All 10 queries verified (127 tests pass) |
 
+#### Verification Wave 3: Supabase SQL Editor (2 checks → PASS)
+
+| # | Check | Evidence |
+|---|-------|----------|
+| P5 | EXPLAIN ANALYZE — no Seq Scan | Index Scan on idx_jobs_status + jobs_pkey confirmed |
+| P6 | Query execution time | 3.27ms (< 80ms threshold) |
+
 #### Lighthouse Results (localhost, production build)
 
 | Page | Perf | A11y | Best Practices | SEO | FCP | CLS |
@@ -233,17 +240,16 @@ TOTAL                :131 PASS, 18 SKIP,  0 FAIL
 | search_jobs_v2 HTTP P95 | 438ms (50 calls, includes network) |
 | employment_type populated | 3,441 jobs (but only in non-ready statuses) |
 
-#### Remaining 18 SKIPs
+#### Remaining 16 SKIPs
 
-| Skip Reason | Count | Checks | Resolution |
-|-------------|-------|--------|------------|
-| Cloudflare Pages deployment | 5 | G23-G25, G29, G34 | Run `phase3-deploy-cf.yml` workflow |
-| Post-deployment verification | 3 | G30, G31, G33 | Verify ISR, explanations, mobile on live site |
-| 24-hour monitoring | 4 | G35-G38 | Monitor after deploy (Sentry, PostHog, CF Analytics) |
-| Direct SQL access | 2 | P5, P6 | Connect via psql for EXPLAIN ANALYZE |
-| Modal endpoint | 2 | P7, G26 | Set MODAL_SEARCH_URL, verify re-ranking latency |
-| OpenAI dashboard | 1 | S27 | Set $50/month spending cap |
-| ISR production | 1 | P2 | Verify revalidation on CF Pages |
+| # | Skip Reason | Count | Checks | Resolution |
+|---|-------------|-------|--------|------------|
+| 1 | Cloudflare Pages deployment | 5 | G23-G25, G29, G34 | Run `phase3-deploy-cf.yml` workflow |
+| 2 | Post-deployment verification | 3 | G30, G31, G33 | Verify ISR, explanations, mobile on live site |
+| 3 | 24-hour monitoring | 4 | G35-G38 | Monitor after deploy (Sentry, PostHog, CF Analytics) |
+| 4 | Modal endpoint | 2 | P7, G26 | Set MODAL_SEARCH_URL, verify re-ranking latency |
+| 5 | OpenAI dashboard | 1 | S27 | Set $50/month spending cap |
+| 6 | ISR production | 1 | P2 | Verify revalidation on CF Pages |
 
 #### Known Data Issues
 
@@ -292,7 +298,7 @@ To complete the remaining 18 skipped checks:
 5. Deploy: Run `phase3-deploy-cf.yml` workflow (set CF secrets first)
 6. Set Cloudflare env vars (SPEC §5.2)
 7. Set OpenAI $50/month spending cap
-8. Connect via psql for P5 (EXPLAIN ANALYZE) and P6 (pg_stat_statements)
+8. ~~Connect via psql for P5 (EXPLAIN ANALYZE) and P6 (pg_stat_statements)~~ ✅ Verified via SQL Editor (2026-03-15)
 9. Monitor 24h for G35-G38
 
 ### CI/CD Workflows Added
@@ -306,9 +312,9 @@ To complete the remaining 18 skipped checks:
 
 ## Next Steps
 
-Phase 3 is code-complete. **131/149 checks pass (88%).** Remaining 18 checks require:
+Phase 3 is code-complete. **133/149 checks pass (89%).** Remaining 16 checks require:
 - Deploy to Cloudflare Pages (`phase3-deploy-cf.yml` workflow ready)
+- Set MODAL_SEARCH_URL for re-ranking latency checks
 - Set OpenAI $50/month spending cap
-- Connect via psql for HNSW index verification
 - Monitor first 24 hours of production traffic
 - Merge display-phase → main with squash commit
