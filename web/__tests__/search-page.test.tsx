@@ -89,8 +89,9 @@ describe("SearchResultsGrid", () => {
         pageSize={20}
       />,
     );
+    expect(screen.getByText("No jobs found")).toBeInTheDocument();
     expect(
-      screen.getByText("No jobs match your search. Try broadening your filters."),
+      screen.getByText("Try broadening your search or removing some filters."),
     ).toBeInTheDocument();
   });
 
@@ -119,8 +120,9 @@ describe("SearchResultsGrid", () => {
         error="Connection failed"
       />,
     );
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
     expect(
-      screen.getByText("Something went wrong. Please try again."),
+      screen.getByText("Please try again in a moment."),
     ).toBeInTheDocument();
   });
 });
