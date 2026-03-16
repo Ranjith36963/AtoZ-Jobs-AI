@@ -66,7 +66,7 @@ export function FilterSidebar({ facets }: FilterSidebarProps) {
   }, [searchParams, router]);
 
   const filterContent = (
-    <div className="space-y-6">
+    <div className="space-y-6 rounded-xl border border-gray-200 bg-white p-5">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
         {activeFilterCount > 0 && (
