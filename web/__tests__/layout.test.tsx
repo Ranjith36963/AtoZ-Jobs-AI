@@ -39,12 +39,12 @@ describe("Header", () => {
 describe("Footer", () => {
   it("renders transparency and accessibility links", () => {
     render(<Footer />);
-    expect(screen.getByText("Transparency")).toBeInTheDocument();
+    expect(screen.getByText("AI Transparency")).toBeInTheDocument();
     expect(screen.getByText("Accessibility")).toBeInTheDocument();
   });
 
   it("shows AI ranking disclosure", () => {
     render(<Footer />);
-    expect(screen.getByText(/Results ranked by AI/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Results ranked by AI/).length).toBeGreaterThanOrEqual(1);
   });
 });
