@@ -17,5 +17,31 @@
       "Bash(*drop*database*)", "Bash(*truncate*)",
       "Bash(*migrate reset*--force*)", "Bash(*--production*)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/pre-migration-reminder.sh",
+            "statusMessage": "Checking migration safety..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/post-dependency-audit.sh",
+            "statusMessage": "Auditing dependencies..."
+          }
+        ]
+      }
+    ]
   }
 }
