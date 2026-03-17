@@ -15,7 +15,7 @@
 | Metric | Value |
 |--------|-------|
 | Gate checks | 100/102 PASS (2 N/A) |
-| Tests | 426 passed |
+| Tests | 426 passed (as of 2026-03-06) |
 | Coverage | 89% |
 | search_jobs P95 | 36ms |
 
@@ -27,7 +27,7 @@ See `docs/phase-1/STATUS.md` for details.
 | Metric | Value |
 |--------|-------|
 | Gate checks | 31 PASS, 91 SKIP, 0 FAIL |
-| Tests | 620 passed |
+| Tests | 620 passed (as of 2026-03-07) |
 | Coverage | 94% |
 
 Skills extraction, advanced dedup, salary prediction, company enrichment, cross-encoder re-ranking.
@@ -38,16 +38,15 @@ See `docs/phase-2/STATUS.md` for details.
 | Metric | Value |
 |--------|-------|
 | Gate checks | 136 PASS, 13 SKIP, 0 FAIL |
-| Tests | 127 passed |
+| Tests | 127 passed (as of 2026-03-15) |
 | Lighthouse Perf | 100 |
 | Lighthouse A11y | 96 |
 
 Next.js 16 frontend, Cloudflare Pages, EU AI Act compliance, WCAG 2.1 AA.
 See `docs/phase-3/STATUS.md` for details.
 
-## Next Steps
+## Completed Milestones
 
-1. **Re-deploy Phase 3:** Run `phase3-deploy-cf.yml` with fixed `wrangler.toml`
-2. **Verify Phase 2 infra:** Run `phase2_gate_checks.py` with Supabase access token
-3. **Monitor:** 24h post-deployment (Sentry, PostHog, CF Analytics)
-4. **Tag:** v0.3.0 and merge `display-phase` → main
+- Phase 3 deployed to Cloudflare Pages
+- Phase 2 infrastructure verified
+- v0.3.0 tagged and `display-phase` merged to main

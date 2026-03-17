@@ -83,7 +83,7 @@ All external services, APIs, rate limits, and fallback chains.
 | Model | Use | Config |
 |-------|-----|--------|
 | **XGBoost** | Salary prediction | max_depth=6, 200 rounds, TF-IDF + one-hot region/category + ordinal seniority |
-| **SpaCy en_core_web_sm** | Skills extraction | PhraseMatcher with two layers (LOWER + ORTH), ~450+ patterns from ESCO |
+| **Regex + ESCO dictionary** | Skills extraction | Regex + dictionary matching, ~147 patterns from ESCO taxonomy. SpaCy PhraseMatcher available in `spacy_matcher.py` but not the active code path. |
 | **cross-encoder/ms-marco-MiniLM-L-6-v2** | Search re-ranking | Query-document relevance scoring on Modal |
 
 ## Infrastructure
@@ -110,6 +110,9 @@ All external services, APIs, rate limits, and fallback chains.
 | `fetch_free_apis` | `30 */3 * * *` (every 3 hours) | 900s |
 | `process_queues` | `*/15 * * * *` (every 15 min) | 600s |
 | `daily_maintenance` | `0 3 * * *` (daily 3 AM) | 1200s |
+
+**Non-cron functions** (callable via Modal CLI/API):
+`seed_esco`, `backfill_job_skills`, `backfill_dedup`, `train_salary_model`, `enrich_companies`, `predict_salaries`, `search`
 
 **App name:** `atoz-jobs-pipeline`
 **Secrets:** `atoz-env` (all env vars bundled)
