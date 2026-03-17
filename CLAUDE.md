@@ -20,7 +20,12 @@ UK AI-powered job search engine. Python pipeline (uv) + Next.js web app (pnpm) +
 - just migrate: Run supabase db push
 - just reset: Run supabase db reset (verifies full migration chain)
 - just seed: Load seed data
+- just seed-dev: Seed + sample jobs for development
+- just seed-perf: Seed + 10K+ jobs for load testing
 - just health: Query pipeline_health view
+- just migrate-rollback: Apply latest down.sql manually
+- just deploy-pipeline: Deploy Modal functions
+- just deploy-web: Build web for deployment
 
 ## Architecture
 See @docs/architecture.md for system design.
@@ -73,14 +78,22 @@ Key insight: embeddings capture semantic intent, SQL filters handle factual cons
 - Supabase RLS enforced on every table — no exceptions
 
 ## Phase 2 Additions
-- **Skills**: SpaCy PhraseMatcher (two-layer: LOWER + ORTH), ESCO taxonomy, dictionary_builder with ~450+ patterns
+- **Skills**: Regex + ESCO dictionary matching (~147 patterns), dictionary_builder for pattern generation
 - **Dedup**: pg_trgm fuzzy matching + MinHash/LSH (datasketch, xxhash) + composite scoring (threshold 0.65)
 - **Salary**: XGBoost prediction with TF-IDF + one-hot region/category + ordinal seniority features
 - **Enrichment**: Companies House API client with SIC code → section letter (A-U) mapping
 - **Search**: search_jobs_v2() with 12 params, 18 return fields, duplicate exclusion, skill filters
 - **Re-ranking**: cross-encoder/ms-marco-MiniLM-L-6-v2 for query-document relevance scoring
 - **Profiles**: user_profiles table with RLS, 768-dim Gemini embeddings for personalization
-- **Migrations**: 000010 (skills taxonomy), 000011 (advanced dedup), 000012 (salary/company), 000013 (user profiles/search_v2)
+- **Migrations**: 000010 (skills taxonomy), 000011 (advanced dedup), 000012 (salary/company), 000013 (user profiles/search_v2), 000014 (phase2 RLS), 000015 (fuzzy duplicates function), 000016 (category_raw/contract_type), 000017 (pgmq permissions)
+
+## Phase 3 Additions
+- **Web**: Next.js 16 on Cloudflare Pages, tRPC search, Supabase SSR
+- **AI Explanations**: GPT-4o-mini match explanations via Vercel AI SDK (budget-capped $45/mo)
+- **EU AI Act**: ai_audit_log table for transparency compliance
+- **Search Facets**: Aggregated counts for filters (category, location, type)
+- **Monitoring**: Sentry (errors), PostHog (analytics), Helicone (LLM cost tracking)
+- **Migrations**: 000018 (ai_audit_log), 000019 (search_facets)
 
 ## Critical Rules
 - When uncertain, state uncertainty. Present tradeoffs, do not choose silently.

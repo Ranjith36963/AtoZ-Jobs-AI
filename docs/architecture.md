@@ -7,28 +7,31 @@ UK AI-powered job search engine combining semantic search (embeddings) with stru
 ## Components
 
 ### Pipeline (Python)
-- **Collectors**: 4 API sources (Reed, Adzuna, Jooble, Careerjet) with circuit breaker pattern
-- **Processing**: Salary normalization, location geocoding, category mapping, seniority extraction, skill extraction
+- **Collectors**: 11 sources — 4 paid APIs (Reed, Adzuna, Jooble, Careerjet) + 7 free APIs (Arbeitnow, RemoteOK, Jobicy, Himalayas, Remotive, DevITjobs, Landing.jobs) with circuit breaker pattern
+- **Processing**: Salary normalization, location geocoding, category mapping, seniority extraction, skill extraction (regex + ESCO dictionary)
 - **Embeddings**: Gemini embedding-001 (768-dim) with OpenAI fallback
-- **Compute**: Modal serverless (5 scheduled cron functions)
+- **Compute**: Modal serverless (6 scheduled cron functions + 7 callable functions)
 
 ### Database (Supabase PostgreSQL)
 - **Extensions**: pgvector (HNSW), PostGIS (geography), pg_trgm (fuzzy), pgmq (queues), pg_cron
-- **Tables**: sources, companies, jobs, skills, job_skills
-- **Search**: Hybrid RRF combining full-text search (tsvector) + semantic search (halfvec cosine)
+- **Tables**: sources, companies, jobs, skills, job_skills, user_profiles, sic_industry_map, ai_audit_log
+- **Search**: Hybrid RRF via search_jobs_v2() combining full-text search (tsvector) + semantic search (halfvec cosine), with cross-encoder re-ranking
 - **Security**: Row-Level Security on every table
 
-### Web (Next.js)
-- **Hosting**: Cloudflare Pages
+### Web (Next.js 16)
+- **Hosting**: Cloudflare Pages (OpenNext adapter)
 - **API**: tRPC for search, direct Supabase client for reads
+- **AI**: GPT-4o-mini match explanations via Vercel AI SDK (budget-capped)
 - **Auth**: Supabase anon key (RLS enforced)
+- **Monitoring**: Sentry (errors), PostHog (analytics), Helicone (LLM costs)
+- **Compliance**: EU AI Act audit logging (ai_audit_log table)
 
 ## Data Flow
 
 ```
 API Sources → Collectors → pgmq Queues → Processing Pipeline → Embeddings → Ready Jobs
                                                                                  ↓
-User Search Query → Embed Query → search_jobs() [RRF: FTS + Semantic + Geo] → Results
+User Search Query → Embed Query → search_jobs_v2() [RRF: FTS + Semantic + Geo + Re-rank] → Results
 ```
 
 ## State Machine
@@ -57,5 +60,5 @@ See `docs/adr/` for Architecture Decision Records.
 - **Embeddings capture semantic intent, SQL filters handle factual constraints** (salary, location, type)
 - **RRF (k=50)** combines FTS + semantic rankings without weight tuning
 - **Pre-filter CTE** eliminates geographically distant jobs before expensive vector search
-- **Rule-based extraction only** in Phase 1 (no LLM, no Instructor)
+- **Rule-based extraction only** in pipeline (regex + ESCO dictionary, no LLM, no Instructor). LLM used only in web layer for match explanations (GPT-4o-mini).
 - **raw_data JSONB** preserved on every job for reprocessing when logic improves
