@@ -1,3 +1,12 @@
+---
+name: api-conventions
+description: >
+  Invoke when adding new tRPC routers, new API routes in web/app/api/,
+  or new collector endpoints in pipeline/src/collectors/.
+  Covers collector patterns, source adapters, and UPSERT conventions.
+invoke: auto
+---
+
 # API Conventions Skill
 
 ## Collector Pattern

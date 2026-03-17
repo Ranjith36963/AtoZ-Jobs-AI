@@ -64,7 +64,7 @@ Overall: GO / NO-GO
 
 ## Does NOT
 
-- Investigate failures (that is the debugger agent)
+- Investigate root causes (that is the debugger agent)
 - Fix issues or modify code
 - Deploy anything
 - Access .env files or secrets

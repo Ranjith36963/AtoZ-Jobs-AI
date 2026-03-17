@@ -1,3 +1,12 @@
+---
+name: health-check
+description: >
+  Invoke after deployments, when investigating issues, before declaring
+  a phase complete, or when asked to check system health.
+  Runs database, pipeline, web, and search health checks.
+invoke: auto
+---
+
 # Health Check Skill
 
 Run a comprehensive health check across all AtoZ Jobs AI components.

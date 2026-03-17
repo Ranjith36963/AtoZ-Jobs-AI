@@ -1,3 +1,11 @@
+---
+name: deploy
+description: >
+  Manually invoked with /deploy. Runs pre-flight safety checks
+  and deploys pipeline (Modal) or web (Cloudflare Pages).
+invoke: manual
+---
+
 # Deploy Command
 
 Deploy pipeline (Modal) or web (Cloudflare Pages) with pre-flight safety checks.
@@ -14,7 +22,7 @@ Deploy pipeline (Modal) or web (Cloudflare Pages) with pre-flight safety checks.
 
 ### 1. Pre-flight gate
 
-Run deploy-gate-team for go/no-go verdict:
+Run the security-auditor agent for a go/no-go verdict:
 - Security audit (no secrets, RLS enforced)
 - Dependency audit (no critical/high CVEs)
 - All tests pass (pipeline + web)
@@ -22,11 +30,26 @@ Run deploy-gate-team for go/no-go verdict:
 - Lint clean (ruff + ESLint)
 - Build succeeds (bundle within limits)
 
-**If NO-GO:** Stop immediately. Show failing gates. Do not proceed.
+Run these quality checks directly:
+
+```bash
+# Pipeline
+cd pipeline && uv run pytest --tb=short -q
+cd pipeline && uv run mypy src/
+cd pipeline && uv run ruff check .
+
+# Web
+cd web && pnpm test
+cd web && pnpm typecheck
+cd web && pnpm lint
+cd web && pnpm build
+```
+
+**If any gate fails:** Stop immediately. Show failing gates. Do not proceed.
 
 ### 2. Confirm with user
 
-Display the deploy-gate-team verdict and ask for explicit confirmation before proceeding.
+Display the gate verdict and ask for explicit confirmation before proceeding.
 
 ### 3. Deploy
 
@@ -36,7 +59,7 @@ Display the deploy-gate-team verdict and ask for explicit confirmation before pr
 cd pipeline && modal deploy src/modal_app.py
 ```
 
-Verify: 5 cron functions registered (collect, parse, normalize, geocode, embed).
+Verify: 6 cron functions registered (fetch_reed, fetch_adzuna, fetch_aggregators, fetch_free_apis, process_queues, daily_maintenance).
 
 #### Web (Cloudflare Pages)
 
@@ -48,7 +71,7 @@ Then deploy via wrangler or Cloudflare Pages Git integration.
 
 ### 4. Post-deploy verification
 
-Run status-reporter to verify system health after deployment:
+Run the status-reporter agent to verify system health after deployment:
 - Database: `just health`
 - Pipeline: check Modal dashboard for function status
 - Web: load production URL, check for errors
@@ -61,7 +84,7 @@ Run status-reporter to verify system health after deployment:
 
 ## References
 
-- `.claude/agents/deploy-gate-team.md` — pre-flight gate
+- `.claude/agents/security-auditor.md` — pre-flight security + dependency + performance audit
 - `.claude/agents/status-reporter.md` — post-deploy verification
 - `docs/phase-1/PLAYBOOK.md` §5.2 — Modal deploy details
 - `docs/phase-3/PLAYBOOK.md` §5.2 — Cloudflare deploy details

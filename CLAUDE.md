@@ -95,7 +95,78 @@ Key insight: embeddings capture semantic intent, SQL filters handle factual cons
 - **Monitoring**: Sentry (errors), PostHog (analytics), Helicone (LLM cost tracking)
 - **Migrations**: 000018 (ai_audit_log), 000019 (search_facets)
 
+## Security Rules
+
+These rules are non-negotiable. Violations must be fixed before commit.
+
+1. **No hardcoded secrets.** Always use .env files (gitignored). Never commit API keys, tokens, or passwords.
+2. **Supabase RLS enforced on every table.** No exceptions. Anon key is browser-safe only because RLS restricts access.
+3. **Service role key is server-only.** Never expose SUPABASE_SERVICE_ROLE_KEY to browser or frontend code.
+4. **Parameterized queries only.** All SQL queries use parameterized statements (Supabase client handles this). No string concatenation in queries.
+5. **OWASP Top 10 review** after writing any auth, input handling, or data processing code.
+6. **Input validation at boundaries.** Zod (TypeScript) or Pydantic (Python) at every external input point.
+7. **No raw HTML rendering** of user input or API response data without sanitization.
+8. **Rate limiting** on all public-facing endpoints to prevent abuse.
+
+## Test Standards
+
+1. **TDD required.** Write tests first, confirm they fail, then implement.
+2. **Pre-computed expectations.** Compare against known expected values, never against function output.
+3. **Sad paths required.** Every test file must include: null, empty, timeout, rate limit, malformed data, auth expiry.
+4. **Property-based testing.** Use hypothesis @given() for parsers (salary, location, seniority). Parser must never raise unhandled exception on arbitrary input.
+5. **Coverage minimums.** Pipeline: 80%. Collectors: 85%. Processing: 90%. Web: 60%.
+6. **Contract tests.** Save real API response samples to tests/fixtures/. Test adapters against these fixtures.
+7. **One test file per module.** Named test_{module_name}.py.
+8. **Async tests.** Use pytest-asyncio with asyncio_mode = "auto".
+
+## CI/CD Rules
+
+1. **Pin all GitHub Actions to specific versions.** Use `actions/checkout@v4`, never `@main` or `@latest`. Unpinned actions are a supply chain risk.
+2. **Pin Node.js version to 20.x.** Must match the version used in `.github/workflows/`.
+3. **Pin Python version to 3.12.** Must match `requires-python` in `pipeline/pyproject.toml`.
+4. **Never hardcode branch names as push targets.** Use `${{ github.ref }}` or workflow inputs.
+5. **Reference secrets via `${{ secrets.X }}`.** Never inline secret values. Never echo secrets to logs.
+6. **Set `timeout-minutes` on every job.** Default: 30 minutes.
+7. **Use correct package managers.** `pnpm` for web (never `npm`), `uv` for pipeline (never `pip` directly). Install with `--frozen-lockfile` / `--frozen`.
+8. **Upload test artifacts.** Use `actions/upload-artifact@v4` for test results and coverage reports.
+
+## Never Do This
+
+- Never rotate secrets autonomously. Direct the user to rotate secrets manually with explicit confirmation at each step.
+- Never run `supabase secrets set`, `doppler secrets set`, or `modal secret create` without explicit user instruction.
+- Never deploy without passing all pre-flight gates and receiving explicit user confirmation.
+- Never modify a deployed migration — create a new one instead.
+
+## Agents
+
+5 specialized sub-agents available in `.claude/agents/`:
+
+| Agent | When to invoke |
+|-------|---------------|
+| `security-auditor` | PR reviews, deploy gates, security/architecture/dependency/performance audits |
+| `debugger` | Investigating failures across pipeline, search, or frontend |
+| `tdd-enforcer` | Validating test compliance after implementation |
+| `migration-deployer` | Verifying migration safety before deploying schema changes |
+| `status-reporter` | System health checks after deployments or during monitoring |
+
+## Skills
+
+9 skills in `.claude/skills/`:
+
+| Skill | Invoke |
+|-------|--------|
+| `migration-safety` | Auto — when editing migrations or schema |
+| `testing-patterns` | Auto — when writing tests |
+| `api-conventions` | Auto — when adding API routes or collectors |
+| `health-check` | Auto — when checking system health |
+| `seed-data` | Auto — when seeding database |
+| `onboarding` | Auto — when setting up dev environment |
+| `deploy` | Manual — `/deploy` |
+| `fix-issue` | Manual — `/fix-issue` |
+| `pr-review` | Manual — `/pr-review` |
+
 ## Critical Rules
+
 - When uncertain, state uncertainty. Present tradeoffs, do not choose silently.
 - For complex tasks, plan before coding. Do not implement without approved plan.
 - One logical change per commit. Conventional commit messages.

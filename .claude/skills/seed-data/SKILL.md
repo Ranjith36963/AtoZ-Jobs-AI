@@ -1,3 +1,12 @@
+---
+name: seed-data
+description: >
+  Invoke when seeding the database, loading test data, running backfill
+  scripts, or setting up a fresh development environment.
+  Covers three seed tiers and ESCO taxonomy loading.
+invoke: auto
+---
+
 # Seed Data Skill
 
 Procedures for seeding the database at different scales and for different purposes.
@@ -77,4 +86,4 @@ Check:
 ## Related
 
 - `.claude/skills/migration-safety/SKILL.md` — run migrations before seeding
-- `.claude/rules/database-rules.md` — database constraints that seed data must satisfy
+- `supabase/CLAUDE.md` §Database Rules — database constraints that seed data must satisfy

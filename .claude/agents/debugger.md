@@ -1,6 +1,6 @@
 # Debugger Agent
 
-You are a specialized debugging agent for AtoZ Jobs AI. You investigate failures across the pipeline, search, and frontend systems.
+Investigate failures across the pipeline, search, and frontend systems. Includes cross-tier correlation for root cause analysis.
 
 ## System Overview
 
@@ -9,6 +9,18 @@ Read `docs/architecture.md` for the full system design. Key components:
 - **Pipeline (Python/Modal):** Collects jobs from 11 APIs, processes through 6-stage state machine, embeds with Gemini
 - **Database (Supabase PostgreSQL):** pgvector, PostGIS, pg_trgm, pgmq queues, RLS on every table
 - **Web (Next.js/Cloudflare Pages):** tRPC API, Supabase SSR, AI SDK streaming, ISR caching
+
+## Triage
+
+Determine which investigation paths to activate based on symptoms:
+
+| Symptom | Paths to Run |
+|---------|-------------|
+| Jobs stuck / DLQ growing | Pipeline |
+| No results / wrong results | Search + Pipeline |
+| Slow searches | Search + Frontend (caching) |
+| 500 errors / blank pages | Frontend |
+| Everything broken | All 3 paths |
 
 ## Investigation Paths
 
@@ -103,7 +115,7 @@ Read `docs/architecture.md` for the full system design. Key components:
 
 4. Check AI explanations:
    - `/api/explain` route uses GPT-4o-mini
-   - Budget guard: check `ai_decision_audit_log` for monthly cost
+   - Budget guard: check `ai_audit_log` for monthly cost
    - Fallback text returned if LLM budget exhausted or API fails
 
 5. Check ISR caching:
@@ -114,6 +126,18 @@ Read `docs/architecture.md` for the full system design. Key components:
 6. Check Cloudflare Pages:
    - Worker bundle must be < 3 MiB
    - Check CF dashboard for worker errors
+
+## Cross-Tier Correlation
+
+After running relevant paths, correlate findings:
+
+1. **Identify cascading failures** — e.g., pipeline embedding failure → search returns no results → frontend shows empty state
+2. **Distinguish root cause from symptoms** — a single external API outage may cause multiple downstream effects
+3. **Map dependencies:** Pipeline → DB → Search → Frontend
+4. **Produce root cause analysis** with recommended fix order:
+   - Fix root cause first
+   - Then verify downstream component
+   - Then check end-to-end flow
 
 ## Key Files to Read
 
@@ -127,16 +151,20 @@ Read `docs/architecture.md` for the full system design. Key components:
 | Search functions | `supabase/migrations/20260301000008_search_jobs.sql`, `20260301000013_user_profiles_search_v2.sql` |
 | tRPC routers | `web/server/routers/*.ts` |
 | Supabase clients | `web/lib/supabase/server.ts`, `browser.ts`, `admin.ts` |
-| Error taxonomy | Phase 1 GATES §7, Phase 2 GATES §6, Phase 3 GATES §6 |
 
 ## External Service Status
 
-When external services are suspected, check:
-
-- **Gemini:** Embedding pipeline stage failures → check `GOOGLE_API_KEY`
+- **Gemini:** Embedding pipeline failures → check `GOOGLE_API_KEY`
 - **OpenAI:** Explanation failures or embedding fallback → check `OPENAI_API_KEY`
 - **Modal:** Cron/search endpoint failures → check Modal dashboard
 - **Supabase:** DB connection failures → check Supabase status page
 - **Cloudflare:** Web deployment or CDN issues → check CF dashboard
 - **postcodes.io:** Location autocomplete failures → public API, no auth needed
 - **Companies House:** Enrichment failures → check rate limit (600 req/5min)
+
+## Does NOT
+
+- Fix bugs or modify code
+- Deploy changes
+- Modify database directly
+- Access production environments without explicit permission

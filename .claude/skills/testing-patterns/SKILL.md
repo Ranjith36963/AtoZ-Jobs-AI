@@ -1,3 +1,12 @@
+---
+name: testing-patterns
+description: >
+  Invoke when writing new tests, adding test files, or asked about
+  testing approach in pipeline/src/tests/ or web/__tests__/.
+  Covers TDD workflow, Python/TS stacks, and coverage requirements.
+invoke: auto
+---
+
 # Testing Patterns Skill
 
 ## TDD Workflow

@@ -53,11 +53,11 @@ Coverage: pipeline 82% ✅ | web 64% ✅
 ## References
 
 - `.claude/skills/testing-patterns/SKILL.md` — TDD workflow and conventions
-- `.claude/rules/test-standards.md` — testing requirements
+- Root `CLAUDE.md` §Test Standards — testing requirements
 
 ## Does NOT
 
 - Write tests or suggest test implementations
 - Modify source code
 - Review architecture or security
-- Run linters or type checkers (that is status-reporter or deploy-gate-team)
+- Run linters or type checkers (that is status-reporter)

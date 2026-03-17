@@ -1,3 +1,12 @@
+---
+name: migration-safety
+description: >
+  Invoke when any task involves supabase/migrations/, schema changes,
+  ALTER TABLE, new columns, DROP commands, or RLS policy changes.
+  Provides migration rules, verification sequence, and rollback patterns.
+invoke: auto
+---
+
 # Migration Safety Skill
 
 ## Rules

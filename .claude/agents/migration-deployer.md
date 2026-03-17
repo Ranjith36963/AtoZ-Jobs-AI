@@ -83,7 +83,7 @@ Overall: SAFE TO DEPLOY / UNSAFE
 ## References
 
 - `.claude/skills/migration-safety/SKILL.md` — safe migration patterns
-- `.claude/rules/database-rules.md` — database constraints
+- `supabase/CLAUDE.md` §Database Rules — database constraints
 
 ## Does NOT
 

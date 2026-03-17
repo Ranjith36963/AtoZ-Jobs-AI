@@ -1,3 +1,12 @@
+---
+name: onboarding
+description: >
+  Invoke when starting a fresh session, onboarding a new developer,
+  or setting up the local development environment from scratch.
+  Covers prerequisites, env setup, and verification.
+invoke: auto
+---
+
 # Onboarding Skill
 
 New session setup checklist. Run this when starting fresh or onboarding a new developer.

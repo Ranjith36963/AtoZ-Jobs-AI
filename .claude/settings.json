@@ -29,6 +29,16 @@
             "statusMessage": "Checking migration safety..."
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/block-secret-rotation.sh",
+            "statusMessage": "Checking for secret rotation commands..."
+          }
+        ]
       }
     ],
     "PostToolUse": [
