@@ -26,7 +26,7 @@ Coordinate architecture-reviewer + security-auditor + self (conventions/tests/co
    - Verify tests exist for new/changed code (reference `test-standards` rule)
    - Check coverage meets minimums (pipeline 80%, web 60%)
    - Verify conventional commit messages (`feat|fix|docs|refactor|test(scope): description`)
-   - Check for SPEC.md deviations
+   - Check for `docs/phase-{1,2,3}/SPEC.md` deviations
    - Verify named exports only (TypeScript), no `any` types
    - Check Zod validation at API boundaries
 

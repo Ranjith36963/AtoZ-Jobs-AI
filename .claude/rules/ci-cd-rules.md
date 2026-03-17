@@ -9,7 +9,7 @@ These rules apply when working with GitHub Actions workflows and CI/CD configura
 
 1. **Pin all GitHub Actions to specific versions.** Use `actions/checkout@v4`, never `@main` or `@latest`. Unpinned actions are a supply chain risk.
 
-2. **Pin Node.js version to 20.x.** Must match the `engines` field in `web/package.json`. Use `node-version: '20'` in workflow files.
+2. **Pin Node.js version to 20.x.** Must match the version used in `.github/workflows/`. Use `node-version: '20'` in workflow files.
 
 3. **Pin Python version to 3.12.** Must match `requires-python` in `pipeline/pyproject.toml`. Use `python-version: '3.12'` in workflow files.
 

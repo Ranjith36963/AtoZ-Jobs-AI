@@ -21,7 +21,7 @@ These rules apply when working with Python pipeline code.
 
 7. **Embedding fallback chain.** Gemini embedding-001 (primary) → OpenAI text-embedding-3-small (fallback) → skip embedding (job stays at `geocoded` status).
 
-8. **No LLM calls in pipeline.** Phase 1-2 uses rule-based extraction only (regex, SpaCy PhraseMatcher, XGBoost). LLM is used only in the web layer for match explanations (Phase 3).
+8. **No LLM calls in pipeline.** Pipeline uses rule-based extraction only (regex + ESCO dictionary, XGBoost for salary prediction). LLM is used only in the web layer for match explanations (Phase 3).
 
 9. **Type hints on every function.** No `Any` types. Use specific types from Pydantic models, typing module, or custom types.
 
